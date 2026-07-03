@@ -1,0 +1,69 @@
+# Supported Models for ASA Jailbreak Evaluation
+# Download models from Hugging Face before running experiments
+# Recommended: place under ./models/ or use default Hugging Face cache
+
+models:
+  vicuna-7b:
+    name: "lmsys/vicuna-7b-v1.5"
+    dtype: "float16"
+    device_map: "auto"
+    max_length: 512
+    template: "vicuna"
+
+  vicuna-13b:
+    name: "lmsys/vicuna-13b-v1.5"
+    dtype: "float16"
+    device_map: "auto"
+    max_length: 512
+    template: "vicuna"
+
+  llama2-7b-chat:
+    name: "meta-llama/Llama-2-7b-chat-hf"
+    dtype: "float16"
+    device_map: "auto"
+    max_length: 512
+    template: "llama2"
+
+  llama2-13b-chat:
+    name: "meta-llama/Llama-2-13b-chat-hf"
+    dtype: "float16"
+    device_map: "auto"
+    max_length: 512
+    template: "llama2"
+
+  llama3-8b-instruct:
+    name: "meta-llama/Meta-Llama-3-8B-Instruct"
+    dtype: "bfloat16"
+    device_map: "auto"
+    max_length: 512
+    template: "llama3"
+
+  mistral-7b-instruct:
+    name: "mistralai/Mistral-7B-Instruct-v0.2"
+    dtype: "float16"
+    device_map: "auto"
+    max_length: 512
+    template: "mistral"
+
+  gemma-7b-it:
+    name: "google/gemma-7b-it"
+    dtype: "float16"
+    device_map: "auto"
+    max_length: 512
+    template: "gemma"
+
+  phi-4:
+    name: "microsoft/phi-4"
+    dtype: "float16"
+    device_map: "auto"
+    max_length: 512
+    template: "phi"
+
+# Chat templates
+templates:
+  vicuna: "USER: {prompt}\nASSISTANT:"
+  llama2: "[INST] {prompt} [/INST]"
+  llama3: "<|begin_of_text|><|start_header_id|>user<|end_header_id|>\n\n{prompt}<|eot_id|><|start_header_id|>assistant<|end_header_id|>\n\n"
+  mistral: "[INST] {prompt} [/INST]"
+  gemma: "<start_of_turn>user\n{prompt}<end_of_turn>\n<start_of_turn>model\n"
+  phi: "<|user|>\n{prompt}<|end|>\n<|assistant|>\n"

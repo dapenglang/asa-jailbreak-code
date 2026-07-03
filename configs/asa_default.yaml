@@ -1,0 +1,42 @@
+# ASA Default Configuration
+# Hyperparameters from the paper
+
+attack:
+  suffix_length: 20
+  num_steps: 500
+  batch_size: 512
+  topk: 256
+
+  # Gumbel-Softmax parameters
+  temperature:
+    init: 2.0
+    min: 0.5
+    gamma: 0.95  # annealing rate
+
+  # AFIM parameters
+  afim:
+    window_size: 50
+    update_frequency: 1  # update AFIM every N steps
+
+  # Active Subspace parameters
+  subspace:
+    dim: 32
+    update_frequency: 10  # update subspace every N steps
+    min_steps_before_subspace: 20  # collect gradients before first subspace update
+
+  # Optimization
+  optimization:
+    early_stop_threshold: 0.01  # stop if loss < threshold
+    early_stop_patience: 20  # steps without improvement before early stop
+
+  # Target templates
+targets:
+  default: "Sure, here is"
+  advbench: "Sure, here is"
+  harmbench: "Sure, here is"
+
+# Logging
+logging:
+  print_every: 10
+  save_loss_history: true
+  save_gradients: false

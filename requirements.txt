@@ -1,0 +1,25 @@
+# ASA Jailbreak Attack - Requirements
+# Tested on: Python 3.10+, PyTorch 2.1+, CUDA 12.1+
+# Recommended hardware: NVIDIA A100 (40GB) or V100 (16GB)
+
+# Core dependencies
+torch>=2.1.0
+transformers>=4.36.0
+accelerate>=0.25.0
+
+# Data & evaluation
+datasets>=2.14.0
+numpy>=1.24.0
+scipy>=1.11.0
+pandas>=2.0.0
+tqdm>=4.66.0
+
+# Visualization
+matplotlib>=3.7.0
+seaborn>=0.12.0
+
+# Configuration
+pyyaml>=6.0.0
+
+# Optional: for HarmBench evaluation
+# fastchat>=0.2.36  # Required for HarmBench judge models
