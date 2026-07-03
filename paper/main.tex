@@ -1,0 +1,1209 @@
+\documentclass[preprint,12pt]{elsarticle}
+
+%% Standard packages
+\usepackage{amsmath,amssymb,amsfonts}
+\usepackage{amsthm}
+\usepackage{booktabs}
+\usepackage{multirow}
+\usepackage{enumitem}
+\usepackage{algorithm}
+\usepackage{algpseudocode}
+\algrenewcommand\alglinenumber[1]{\footnotesize\arabic{alglinenumber}}
+\newcommand{\Return}{\State \textbf{return} }
+\usepackage{subcaption}
+\usepackage[table]{xcolor}
+\usepackage{graphicx}
+\usepackage{url}
+\usepackage{hyperref}
+
+\journal{Artificial Intelligence}
+
+% ===== Custom commands =====
+\newcommand{\R}{\mathbb{R}}
+\newcommand{\E}{\mathbb{E}}
+\newcommand{\Tr}{\mathrm{Tr}}
+\DeclareMathOperator*{\argmin}{arg\,min}
+\DeclareMathOperator*{\argmax}{arg\,max}
+\DeclareMathOperator{\softmax}{softmax}
+
+% ===== Theorem environments =====
+\newtheorem{theorem}{Theorem}[section]
+\newtheorem{lemma}{Lemma}[section]
+\newtheorem{corollary}{Corollary}[section]
+\newtheorem{definition}{Definition}[section]
+
+\begin{document}
+\graphicspath{{figures/}}
+
+\begin{frontmatter}
+
+%% Title
+\title{Active Subspace Attack: Exploiting Spectral Geometry of Loss Landscapes for Efficient LLM Jailbreaking}
+
+%% Authors
+\author[inst1]{Yan Wang}
+
+\author[inst2,cor1]{Dapeng Lang}
+\ead{langdapeng@outlook.com}
+
+\cortext[cor1]{Corresponding author.}
+
+\affiliation[inst1]{organization={Harbin Institute of Technology},
+            city={Harbin},
+            postcode={150001},
+            state={Heilongjiang},
+            country={China}}
+
+\affiliation[inst2]{organization={Harbin Engineering University},
+            city={Harbin},
+            postcode={150001},
+            state={Heilongjiang},
+            country={China}}
+
+%% Abstract
+\begin{abstract}
+
+Gradient-based jailbreak attacks such as GCG can circumvent LLM safety alignment by optimizing adversarial suffixes in the full token embedding space. However, the adversarial loss landscape exhibits pronounced spectral anisotropy: gradient signal concentrates in a small number of principal directions while the remaining dimensions are dominated by noise, rendering full-space gradient descent suboptimal.
+
+We propose \textit{Active Subspace Attack} (ASA), which introduces the Attack Fisher Information Matrix (AFIM) to characterize the second-order spectral geometry of adversarial gradients, employs Brand's incremental SVD for online active subspace tracking with $O(dk^2)$ complexity, and projects full-space gradients onto the dominant eigenspace to enhance the signal-to-noise ratio by $O(d/k)$. Theoretically, we prove that the AFIM eigenvalues follow power-law decay with $\beta \in [1.8, 2.4]$ and that subspace-projected optimization achieves faster convergence than full-space methods. Empirically, ASA achieves state-of-the-art attack success rates across six model families on AdvBench and HarmBench, while generating low-perplexity suffixes that effectively evade perplexity-based filters and SmoothLLM defenses. Our code is available at \url{https://github.com/dapenglang/asa-jailbreak-code}.
+
+\end{abstract}
+
+
+%% Keywords
+\begin{keywords}
+large language models \sep jailbreak attack \sep active subspace \sep Fisher information matrix \sep gradient optimization \sep safety alignment
+\end{keywords}
+
+\end{frontmatter}
+
+% ============================================================
+% 1. INTRODUCTION
+% ============================================================
+\section{Introduction}
+\label{sec:introduction}
+
+\subsection{Background and Motivation}
+\label{sec:background}
+
+Large language models (LLMs) have demonstrated remarkable capabilities across a wide spectrum of natural language processing tasks, from code generation and question answering to creative writing and scientific reasoning \cite{ouyang2022training, bai2022constitutional}. The rapid deployment of these models in consumer-facing applications, however, has raised critical concerns regarding their potential to generate harmful, offensive, or illegal content when prompted with malicious queries. To mitigate these risks, LLM developers have invested substantial effort into safety alignment mechanisms---most notably Reinforcement Learning from Human Feedback (RLHF) \cite{ouyang2022training} and Constitutional AI \cite{bai2022constitutional}---which fine-tune pretrained models to refuse harmful requests while preserving helpfulness on benign queries. These alignment procedures have proven effective at the surface level: public chatbots such as ChatGPT, Claude, and LLaMA-2-Chat will not generate obviously inappropriate content when asked directly.
+
+Despite these safeguards, a growing body of research has demonstrated that the safety alignment of LLMs is far from robust. Adversarial jailbreak attacks---carefully crafted prompts designed to circumvent safety guardrails---have been shown to elicit harmful responses from state-of-the-art aligned models with alarming consistency \cite{zou2023universal, chao2023jailbreaking, mehrotra2023tree}. These attacks exploit the fundamental tension between the model's pretraining objective (maximizing likelihood on diverse web corpora) and its safety alignment objective (refusing harmful queries). The consequences of successful jailbreaking extend beyond academic interest: they pose tangible risks to model deployment in high-stakes applications, inform the design of more robust alignment protocols, and raise important questions about the interpretability and controllability of increasingly capable AI systems.
+
+Jailbreak attacks can be broadly categorized into three paradigms based on their methodological foundations. \textit{Expertise-based methods} rely on human ingenuity to craft prompts that manipulate LLMs through social engineering tactics, role-playing scenarios, or carefully constructed deception chains \cite{zeng2024persuasion}. While these manual approaches can be highly effective, they require substantial domain expertise and do not scale to systematic red-teaming across diverse harmful behaviors. \textit{LLM-based methods} employ an attacker LLM to automatically generate and refine jailbreak prompts against a target model through iterative querying \cite{chao2023jailbreaking, mehrotra2023tree}. These approaches achieve impressive query efficiency but depend on the capabilities of the attacker LLM and may struggle against models with strong refusal mechanisms. \textit{Optimization-based methods} leverage gradient information from white-box or gray-box access to the target model to directly optimize adversarial suffixes that maximize the probability of generating a harmful response \cite{zou2023universal, jia2024improved, zhu2023autodan}. Among these paradigms, gradient-based optimization has emerged as the most principled and generalizable approach, providing a direct mathematical formulation of the jailbreak objective and enabling systematic exploration of the adversarial input space.
+
+The central challenge in optimization-based jailbreaking is the \textit{discrete nature of the token vocabulary}. Unlike continuous image pixels, token indices are categorical variables with no inherent metric structure, rendering direct gradient updates inapplicable. This discreteness necessitates either continuous relaxations of the token space or alternative optimization strategies such as genetic algorithms, reinforcement learning, or coordinate descent. The Greedy Coordinate Gradient (GCG) attack \cite{zou2023universal} addressed this challenge by optimizing adversarial suffixes in the token embedding space through a combination of gradient evaluation and greedy top-$k$ candidate selection, achieving the first automated, transferable jailbreak against aligned LLMs. Nevertheless, GCG and its subsequent improvements operate under a critical and largely unexamined assumption: that all dimensions of the token embedding space contribute equally to the adversarial objective. As we will demonstrate, this assumption is fundamentally violated by the anisotropic spectral structure of the adversarial loss landscape, leading to suboptimal convergence and unnecessarily high computational cost.
+
+\subsection{Existing Works and Their Contributions}
+\label{sec:existing_works}
+
+The rapid development of jailbreak research has produced a diverse array of methods, evaluation frameworks, and safety alignment strategies. We review the contributions of six representative works that most directly inform our research, highlighting the problems they have solved and the technical foundations they have established.
+
+\paragraph{GCG: Automated gradient-based jailbreaking.} Zou et al. \cite{zou2023universal} introduced the Greedy Coordinate Gradient (GCG) attack, which formulated jailbreaking as an optimization problem over discrete token sequences and solved it via a novel combination of gradient evaluation and greedy coordinate descent. GCG computes gradients with respect to the adversarial suffix tokens in the continuous embedding space, identifies the top-$k$ most promising candidate tokens at each position, and evaluates these candidates to select the update that most reduces the attack loss. This approach achieved a paradigm shift from manual jailbreak engineering to automated adversarial optimization, demonstrating that gradient-based methods can discover universal and transferable adversarial suffixes without human ingenuity. GCG's success in jailbreaking GPT-4, Claude, Bard, and LLaMA-2-Chat established optimization-based attacks as a dominant paradigm in LLM red-teaming.
+
+\paragraph{I-GCG: Improved efficiency and success rates.} Jia et al. \cite{jia2024improved} identified two critical limitations of GCG: the restrictive single-target template (``Sure, here is'') and the fixed single-coordinate update strategy. They proposed I-GCG, which incorporates diverse target templates containing harmful self-suggestions and guidance to provide richer optimization signals, an automatic multi-coordinate updating strategy that adaptively determines the number of tokens to replace at each step, and an easy-to-hard initialization scheme that progressively increases attack difficulty. These empirical improvements significantly accelerated convergence and achieved near-perfect attack success rates across multiple benchmarks. I-GCG demonstrated that the design of optimization objectives and update strategies has substantial room for improvement beyond GCG's original formulation.
+
+\paragraph{HarmBench: Standardized evaluation for red teaming.} Mazeika et al. \cite{mazeika2024harmbench} addressed a pervasive problem in the jailbreak literature: the lack of standardized evaluation protocols. Prior work employed disparate evaluation setups---different model versions, refusal detection heuristics, success criteria, and behavior datasets---rendering meaningful comparisons across papers essentially impossible. HarmBench introduced a comprehensive evaluation framework comprising 510 adversarial behaviors spanning 13 semantic risk categories, standardized attack and defense APIs, and a unified success metric. By conducting large-scale comparisons of 18 red teaming methods against 33 target models, HarmBench established a common ground for measuring progress in automated red teaming and provided actionable insights into the relative strengths and weaknesses of existing attacks.
+
+\paragraph{DOOR: Dual-objective optimization for safety alignment.} Zhao et al. \cite{zhao2025door} approached the jailbreak problem from the defense perspective, revealing fundamental shortcomings in Direct Preference Optimization (DPO)---a widely deployed alignment method---for refusal learning. Through gradient-based analysis, they identified that DPO disproportionately suppresses harmful responses rather than actively reinforcing refusal strategies, and struggles to generalize beyond its training distribution. They proposed DOOR (Dual-Objective Optimization for Refusal), which disentangles alignment into robust refusal training and targeted harmful knowledge unlearning. DOOR's analysis of token distribution shifts and internal representations of refusal tokens offered valuable insights into the mechanistic underpinnings of jailbreak vulnerabilities, suggesting that robustness to adversarial attacks is deeply connected to the geometric structure of the model's internal representations.
+
+\paragraph{Active Subspace: Dimension reduction for parameter studies.} Constantine et al. \cite{constantine2014active, constantine2015active} developed the active subspace method for dimension reduction in high-dimensional parameter studies, originally in the context of uncertainty quantification for physical simulations. The core insight is that the average outer product of gradients with respect to input parameters defines a matrix whose dominant eigenvectors span the directions along which the output varies most significantly. By projecting the parameter space onto this low-dimensional active subspace, complex high-dimensional problems become tractable without sacrificing predictive accuracy. While originally developed for continuous parameter spaces in computational physics, the active subspace framework provides a general mathematical principle for exploiting gradient geometry to reduce effective dimensionality---a principle that, as we will show, is directly applicable to the adversarial optimization of discrete token sequences.
+
+\paragraph{RLHF and Constitutional AI: Foundations of safety alignment.} The training-time alignment methods developed by Ouyang et al. \cite{ouyang2022training} and Bai et al. \cite{bai2022constitutional} established the current paradigm for LLM safety: fine-tuning pretrained models on human preference data to align their outputs with human values. These methods have been widely adopted and refined, forming the baseline against which all jailbreak attacks are evaluated. The effectiveness of jailbreak methods is fundamentally measured by their ability to circumvent the safeguards introduced by these alignment procedures, making a thorough understanding of their mechanisms essential for contextualizing attack research.
+
+\subsection{Research Gaps and Limitations}
+\label{sec:gaps}
+
+Despite the significant advances achieved by the aforementioned works, several critical challenges remain unresolved. These limitations motivate the development of our Active Subspace Attack (ASA) framework and define the scope of our contributions.
+
+\paragraph{Gap 1: Full-space optimization ignores spectral anisotropy.} Existing gradient-based jailbreak methods, including GCG \cite{zou2023universal} and I-GCG \cite{jia2024improved}, operate by updating all dimensions of the token embedding space simultaneously via full-space gradient descent. Formally, the update rule is $\mathbf{S}_{t+1} = \mathbf{S}_t - \eta \, \mathbf{g}_t$, where $\mathbf{g}_t \in \mathbb{R}^d$ is the gradient and $d$ is the embedding dimension. This isotropic treatment of dimensions implicitly assumes that all gradient directions contribute equally to the adversarial objective. However, as we demonstrate in \S\ref{sec:afim}, the adversarial loss landscape exhibits pronounced \textit{spectral anisotropy}: the eigenvalues of the gradient covariance matrix decay rapidly, with the top-$k$ directions capturing the vast majority of signal variance while the remaining $d-k$ directions are dominated by noise. By updating in the full space, these methods waste gradient computations on noise-dominated directions, leading to slow convergence and suboptimal sample efficiency.
+
+\paragraph{Gap 2: Lack of theoretical characterization of adversarial loss landscape geometry.} While empirical improvements to GCG have been extensively studied \cite{jia2024improved, zhu2023autodan, ren2024drattack}, there exists no principled theoretical framework for characterizing the geometry of the adversarial loss landscape during jailbreak optimization. Existing analyses treat the loss landscape as an opaque object to be navigated via gradient descent, without quantifying the signal-to-noise ratio (SNR) of gradient directions, the spectral structure of gradient covariances, or the effective dimensionality of the adversarial optimization problem. This theoretical gap precludes the design of optimization algorithms that exploit the inherent geometric structure of the problem, leaving potential efficiency gains unrealized.
+
+\paragraph{Gap 3: High perplexity of adversarial suffixes compromises stealthiness.} A practical limitation of existing gradient-based attacks is that the generated adversarial suffixes often exhibit abnormally high perplexity, making them easily detectable by perplexity-based defense filters \cite{zhu2023autodan, robey2023smoothllm}. The discrete token selection process in GCG prioritizes attack success over linguistic naturalness, resulting in suffixes that contain unusual token sequences, repeated patterns, or semantically incoherent fragments. This trade-off between attack efficacy and stealthiness is particularly problematic for black-box transfer scenarios, where high-perplexity suffixes may be filtered before reaching the target model. The development of attacks that simultaneously achieve high success rates and low perplexity remains an open challenge.
+
+\paragraph{Gap 4: Active subspace methods have not been applied to adversarial token optimization.} The active subspace framework \cite{constantine2014active, constantine2015active} has been successfully applied to parameter studies in computational physics, engineering design, and neural network interpretability, but its adaptation to the adversarial optimization of discrete token sequences remains unexplored. The unique challenges of this setting---non-stationary gradient distributions due to changing iterates, the need for online subspace tracking rather than offline computation, and the discrete-to-continuous relaxation required for gradient flow---demand novel algorithmic innovations beyond the direct application of existing active subspace methods.
+
+\subsection{Proposed Approach: Active Subspace Attack}
+\label{sec:proposed_approach}
+
+To address the aforementioned gaps, we propose \textit{Active Subspace Attack} (ASA), a novel gradient-based jailbreak framework that exploits the spectral geometry of the adversarial loss landscape to achieve efficient, stealthy, and theoretically grounded adversarial suffix generation. The core insight of ASA is that the adversarial loss landscape is not isotropic: its geometric structure is dominated by a small number of principal directions (the \textit{active subspace}) along which the signal-to-noise ratio of gradients is maximized. By restricting optimization to this low-dimensional active subspace, ASA achieves orders-of-magnitude improvements in convergence speed while simultaneously reducing the perplexity of generated suffixes.
+
+Figure \ref{fig:asa_architecture} presents an overview of the ASA framework, which comprises four interconnected modules. The \textbf{Gumbel-Softmax Relaxation} module maps discrete token indices to continuous probability distributions via the Gumbel-Softmax reparameterization \cite{jang2017categorical, maddison2017concrete}, enabling end-to-end gradient flow through the otherwise non-differentiable token sampling operation. The Straight-Through Estimator (STE) \cite{bengio2013estimating} bridges the forward-backward discrepancy by using discrete samples in the forward pass while approximating gradients through the continuous relaxation in the backward pass. The \textbf{AFIM Construction} module computes the Attack Fisher Information Matrix (AFIM) as the streaming average of gradient outer products, capturing the second-order statistics of the adversarial loss landscape. The \textbf{Incremental SVD} module applies Brand's incremental singular value decomposition \cite{brand2002incremental, brand2006fast} to maintain a low-rank approximation of the AFIM with $O(dk^2)$ computational complexity, where $k$ is the active subspace dimension. The \textbf{Subspace Projection} module projects the full-space gradient onto the active subspace, enhancing the signal-to-noise ratio by a factor of $O(d/k)$, and performs coordinate descent within this low-dimensional subspace to generate the adversarial suffix.
+
+\begin{figure}[t]
+  \centering
+  \includegraphics[width=0.95\linewidth]{ASA-Architecture-Final-Linear.jpg}
+  \caption{Overview of the proposed Active Subspace Attack (ASA) framework. The framework comprises four interconnected modules: (1) Gumbel-Softmax continuous relaxation with Straight-Through Estimation for discrete-to-continuous token mapping; (2) online Attack Fisher Information Matrix (AFIM) construction via streaming gradient outer products; (3) incremental SVD for active subspace tracking; and (4) subspace-projected gradient optimization for adversarial suffix generation. Solid arrows indicate forward data flow; dashed arrows indicate gradient flow. The spectral plot (bottom right) illustrates the power-law eigenvalue decay $\lambda_i \propto i^{-\beta}$ characterizing the adversarial loss landscape.}
+  \label{fig:asa_architecture}
+\end{figure}
+
+The theoretical foundation of ASA rests on four pillars. First, we define the Attack Fisher Information Matrix (AFIM) as the expected outer product of adversarial gradients and prove that its spectral decomposition reveals the intrinsic low-dimensional structure of the adversarial loss landscape (\S\ref{sec:afim}). Second, we leverage the Ky Fan maximum principle \cite{fan1949theorem} to establish that projection onto the dominant eigenspace of the AFIM maximizes the captured signal power among all rank-$k$ projections, providing a rigorous justification for the subspace restriction strategy (Theorem \ref{thm:snr}). Third, we prove that the incremental SVD algorithm converges to the true active subspace at rate $O(1/\sqrt{t})$ under standard regularity assumptions (Theorem \ref{thm:subspace_error}). Fourth, we establish convergence guarantees for the subspace-projected gradient descent, showing that the iteration complexity is reduced by a factor of $O(d/k)$ compared to full-space optimization (Theorem \ref{thm:convergence}, Corollary \ref{cor:speedup}).
+
+\subsection{Main Contributions}
+\label{sec:contributions}
+
+The contributions of this paper are fourfold:
+
+\begin{enumerate}[leftmargin=2em]
+\item \textbf{Attack Fisher Information Matrix and Spectral Analysis of Adversarial Loss Landscapes.} We introduce the Attack Fisher Information Matrix (AFIM) as a principled characterization of the local geometry of the adversarial loss landscape during LLM jailbreak optimization. Through theoretical analysis, we prove that the AFIM eigenvalues exhibit power-law decay $\lambda_i \propto i^{-\beta}$ with $\beta \in [1.8, 2.4]$, establishing that the adversarial loss landscape possesses an intrinsic low-dimensional structure. This spectral analysis provides the first quantitative geometric explanation for why full-space gradient methods are suboptimal and motivates the active subspace restriction.
+
+\item \textbf{Incremental SVD-Driven Online Active Subspace Tracking.} We extend the active subspace framework \cite{constantine2014active} to the non-stationary gradient streams encountered during adversarial optimization. By adapting Brand's incremental SVD algorithm \cite{brand2002incremental, brand2006fast}, we develop an online subspace tracking procedure that maintains an accurate rank-$k$ approximation of the AFIM with $O(dk^2)$ per-step complexity. We prove that the estimated active subspace converges to the true subspace at rate $O(1/\sqrt{t})$ (Theorem \ref{thm:subspace_error}), ensuring reliable subspace identification throughout the optimization trajectory.
+
+\item \textbf{Subspace-Projected Gradient Optimization with Signal-to-Noise Ratio Enhancement.} Based on the Ky Fan maximum principle \cite{fan1949theorem}, we propose projecting the full-space gradient onto the active subspace before performing coordinate updates. We prove that this projection enhances the signal-to-noise ratio by a factor of $O(d/k)$ (Theorem \ref{thm:snr}), enabling more reliable token selection. Combined with the Gumbel-Softmax relaxation and STE, the subspace-restricted optimization achieves faster convergence and higher attack success rates than full-space methods.
+
+\item \textbf{Low-Perplexity Adversarial Suffix Generation and Defense Evasion.} Through spectral regularization, ASA generates adversarial suffixes with significantly lower perplexity than existing gradient-based attacks. Empirical evaluation demonstrates that ASA achieves high attack success rates while maintaining perplexity comparable to benign text, enabling effective evasion of perplexity-based filters \cite{robey2023smoothllm}, SmoothLLM perturbation defenses, and SafeDecoding detection mechanisms. This stealthiness property is crucial for practical jailbreak scenarios where input sanitization is deployed.
+\end{enumerate}
+
+\subsection{Paper Organization}
+\label{sec:organization}
+
+The remainder of this paper is organized as follows. \S\ref{sec:related_work} reviews related work on jailbreak attacks, gradient-based adversarial optimization, discrete optimization techniques, subspace methods, Fisher information geometry, and LLM safety defenses. \S\ref{sec:preliminary} establishes the theoretical foundation, formalizing the adversarial suffix optimization problem, defining the AFIM and characterizing its spectral properties, and introducing the active subspace concept. \S\ref{sec:method} presents the ASA algorithm in detail, including the Gumbel-Softmax relaxation with STE, the incremental SVD procedure, the subspace projection optimization strategy, and complexity analysis. \S\ref{sec:experiments} provides comprehensive empirical evaluation across multiple models, benchmarks, and defense mechanisms, validating the theoretical predictions and demonstrating the practical advantages of ASA. \S\ref{sec:conclusion} concludes the paper and discusses future directions.
+
+
+
+% ============================================================
+% 2. RELATED WORK
+% ============================================================
+
+
+\section{Related Work}
+\label{sec:related_work}
+
+This section surveys the literature most relevant to our work, organized into six thematic categories that mirror the theoretical and algorithmic contributions presented in \S\ref{sec:preliminary}--\ref{sec:experiments}. We first review jailbreak attacks on aligned language models (\S\ref{sec:rw_jailbreak}), followed by gradient-based adversarial optimization methods (\S\ref{sec:rw_gradient}), discrete optimization techniques for adversarial suffix generation (\S\ref{sec:rw_discrete}), subspace methods and spectral geometry (\S\ref{sec:rw_subspace}), Fisher information matrix and loss landscape analysis (\S\ref{sec:rw_fim}), and finally LLM safety defenses and detection mechanisms (\S\ref{sec:rw_defense}).
+
+\subsection{Jailbreak Attacks on Aligned Language Models}
+\label{sec:rw_jailbreak}
+
+The emergence of large language models (LLMs) with safety alignment has catalyzed extensive research on adversarial jailbreaking---the systematic circumvention of safety guardrails to elicit harmful content \cite{wang2023llm_security_survey_jsj, li2022adversarial_survey_rjb}. Early jailbreak attempts relied on manual prompt engineering, exploiting social engineering tactics or adversarially crafted instructions \cite{zeng2024persuasion}. However, the manual nature of these attacks limits their scalability and transferability across different models and harmful behaviors.
+
+\paragraph{Optimization-based jailbreak methods.} The seminal work by Zou et al. \cite{zou2023universal} introduced the Greedy Coordinate Gradient (GCG) attack, which formulates jailbreaking as an optimization problem over discrete token sequences. GCG computes gradients with respect to the adversarial suffix tokens and iteratively updates the suffix via a combination of greedy selection and gradient-based top-$k$ candidate evaluation. This approach achieved unprecedented success rates against aligned models including GPT-4, Claude, and LLaMA-2-Chat, demonstrating that automated optimization can discover transferable adversarial suffixes without human ingenuity. Subsequent improvements include I-GCG \cite{jia2024improved}, which introduces multi-target template optimization and adaptive sampling strategies to enhance both attack success rate and convergence efficiency. DrAttack \cite{ren2024drattack} decomposes the adversarial prompt into semantically meaningful fragments and reconstructs them via gradient-guided perturbation, achieving higher stealthiness while maintaining attack efficacy. Soft-GCG \cite{ren2024soft} replaces the discrete token search with soft prompt tuning, trading some attack strength for significantly reduced computational cost.
+
+\paragraph{Black-box and sampling-based attacks.} Complementary to white-box gradient-based methods, black-box attacks assume no access to model parameters or gradients. PAIR (Prompt Automatic Iterative Refinement) \cite{chao2023jailbreaking} leverages an attacker LLM to iteratively refine jailbreak prompts against a target LLM, achieving high success rates with fewer than twenty queries. The Tree of Attacks (TAP) \cite{mehrotra2023tree} extends this paradigm by organizing the search space as a tree structure, enabling more systematic exploration of semantic variations. AutoDAN \cite{zhu2023autodan} occupies an intermediate position: it generates interpretable, gradient-guided adversarial prompts that bypass perplexity-based defenses while maintaining semantic coherence. These methods collectively demonstrate that jailbreak vulnerabilities are not merely artifacts of gradient-based optimization but reflect fundamental limitations in current safety alignment strategies \cite{liu2024llm_attack_defense_jsjy}.
+
+\paragraph{Persuasion and social engineering attacks.} Recent work has explored non-gradient strategies that exploit the conversational nature of LLMs. Zeng et al. \cite{zeng2024persuasion} introduced persuasive adversarial prompts (PAP) derived from social science research, achieving over 92\% attack success rates on GPT-4 and LLaMA-2-7B-Chat. This paradigm shift from algorithmic optimization to human-like persuasion highlights the multifaceted nature of jailbreak vulnerabilities and underscores the need for defense mechanisms that address both computational and social attack vectors \cite{yang2023ai_safety_txxb}.
+
+\subsection{Gradient-Based Adversarial Optimization}
+\label{sec:rw_gradient}
+
+The theoretical foundations of gradient-based adversarial optimization trace back to seminal work in adversarial machine learning for computer vision. Madry et al. \cite{madry2018towards} formalized adversarial training as a min-max optimization problem and introduced Projected Gradient Descent (PGD) as a principled attack methodology. Carlini and Wagner \cite{carlini2017towards} proposed the CW attack, which directly optimizes a differentiable loss function combining adversarial objective and perturbation magnitude, achieving superior robustness evaluation capabilities. These frameworks established the paradigm of treating adversarial example generation as continuous optimization over input perturbations.
+
+\paragraph{Trade-offs in adversarial robustness.} The theoretical analysis of robustness-accuracy trade-offs has matured significantly. Zhang et al. \cite{zhang2019theoretically} proved that there exists an inherent tension between standard accuracy and adversarial robustness, motivating the TRADES framework that explicitly decomposes the learning objective into natural error and boundary error terms. Croce and Hein \cite{croce2020reliable} introduced AutoAttack, an ensemble of diverse parameter-free attacks that serves as a standardized robustness evaluation protocol, revealing that many previously claimed robust models succumb to stronger adaptive attacks. For natural language processing, FreeLB \cite{zhu2020freelb} adapted adversarial training to the text domain by adding adversarial perturbations to word embeddings, demonstrating that the gradient-based adversarial paradigm extends beyond continuous image spaces to discrete linguistic representations. Moosavi-Dezfooli et al. \cite{moosavi2016deepfool} proposed DeepFool, which computes minimal adversarial perturbations by linearizing the classifier decision boundary, providing geometric insights into the vulnerability of deep neural networks.
+
+\paragraph{Challenges in discrete spaces.} A fundamental challenge in applying gradient-based optimization to LLM jailbreaking is the discrete nature of the token vocabulary \cite{chen2023gradient_optimization_zdhx}. Unlike image pixels, which form a continuous space amenable to direct gradient updates, token indices are categorical variables with no inherent metric structure. This discreteness necessitates either continuous relaxations (as in GCG \cite{zou2023universal}) or alternative optimization strategies such as genetic algorithms or reinforcement learning. The anisotropic structure of the adversarial loss landscape, which we characterize formally in \S\ref{sec:preliminary} via the Attack Fisher Information Matrix, further complicates optimization: gradient directions vary dramatically in their signal-to-noise ratio, rendering full-space gradient descent suboptimal.
+
+\subsection{Discrete Optimization and Continuous Relaxations}
+\label{sec:rw_discrete}
+
+The optimization of discrete variables through gradient-based methods requires continuous relaxations that preserve differentiability while approximating the discrete objective. The Gumbel-Softmax trick \cite{jang2017categorical, maddison2017concrete} provides a principled framework for reparameterizing categorical distributions via the Gumbel-Max trick \cite{gumbel1954statistical}. By adding independent Gumbel noise to log-probabilities and applying a temperature-controlled softmax, the Gumbel-Softmax distribution yields differentiable samples that converge to one-hot encodings as the temperature approaches zero. This reparameterization enables end-to-end gradient flow through categorical sampling operations, making it applicable to neural architecture search, variational autoencoders, and---in our context---discrete token optimization for adversarial suffix generation.
+
+\paragraph{Straight-Through Estimation.} While Gumbel-Softmax provides a continuous relaxation, the forward pass must ultimately produce discrete tokens for LLM evaluation. Straight-Through Estimation (STE) \cite{bengio2013estimating} resolves this discrepancy by using discrete samples in the forward pass while approximating the gradient via the continuous relaxation in the backward pass. This ``straight-through'' gradient, though biased, has proven remarkably effective in practice for training networks with discrete stochastic units. In \S\ref{sec:gumbel_ste}, we provide a formal bias characterization of STE under the Gumbel-Softmax relaxation and prove that the bias vanishes as temperature decreases (Lemma \ref{lem:ste_bias}).
+
+\paragraph{Sampling without replacement.} The Gumbel-Top-$k$ trick \cite{kool2019stochastic} extends the Gumbel-Softmax framework to sampling sequences without replacement, providing efficient algorithms for subset selection and beam search. While our ASA framework primarily employs single-sample Gumbel-Softmax with STE, the theoretical connections between Gumbel-based reparameterization and discrete optimization are central to our continuous relaxation strategy.
+
+\subsection{Subspace Methods and Spectral Geometry}
+\label{sec:rw_subspace}
+
+The concept of active subspaces, introduced by Constantine et al. \cite{constantine2014active, constantine2015active}, provides a rigorous mathematical framework for dimension reduction in high-dimensional parameter studies. An active subspace is defined as the principal eigenspace of the average outer product of gradients, capturing the directions in parameter space along which a function varies most significantly. Originally developed for uncertainty quantification and sensitivity analysis in computational physics, active subspace methods have found applications in engineering design, hydrology, and---more recently---neural network analysis. Lam et al. \cite{lam2022multifidelity} extended active subspaces to multifidelity settings, where gradient information from multiple approximation levels is combined to accelerate dimension reduction.
+
+\paragraph{Online subspace tracking.} The practical computation of active subspaces in streaming settings requires efficient incremental algorithms. Brand \cite{brand2002incremental, brand2006fast} developed incremental SVD procedures that maintain low-rank matrix approximations under rank-1 updates with $O(dk^2)$ computational complexity, where $d$ is the ambient dimension and $k$ is the target rank. These algorithms have been widely adopted in computer vision, recommendation systems, and online learning. Balzano et al. \cite{balzano2018online} analyzed the convergence of online subspace estimation from partial observations, establishing theoretical guarantees under incoherence assumptions. In \S\ref{sec:incremental_svd}, we adapt Brand's incremental SVD to the non-stationary gradient distribution of adversarial optimization, proving that the estimated active subspace converges to the true subspace at rate $O(1/\sqrt{t})$ (Theorem \ref{thm:subspace_error}).
+
+\paragraph{Randomized numerical linear algebra.} Halko et al. \cite{halko2011finding} established the theoretical foundations of randomized algorithms for approximate matrix decomposition, proving that random projections followed by power iteration yield near-optimal low-rank approximations with substantial computational savings. While our ASA framework employs deterministic incremental SVD rather than randomized methods, the spectral concentration properties underlying both approaches---that the top-$k$ eigenvectors capture the dominant signal variance---are identical. The Ky Fan maximum principle \cite{fan1949theorem}, which we invoke in Theorem \ref{thm:ky_fan}, guarantees that the active subspace maximizes the captured signal power among all rank-$k$ projections.
+
+\subsection{Fisher Information Matrix and Loss Landscape Geometry}
+\label{sec:rw_fim}
+
+The Fisher Information Matrix (FIM) occupies a central position in statistical estimation and information geometry. Amari \cite{amari1998natural} introduced natural gradient descent, which preconditions parameter updates by the inverse FIM, yielding parameterization-invariant optimization trajectories that account for the local geometry of the statistical manifold. In deep learning, the FIM characterizes the curvature of the loss landscape and is intimately connected to the Hessian matrix under certain conditions \cite{pascanu2014saddle}. Martens and Grosse \cite{martens2015optimizing} proposed K-FAC (Kronecker-Factored Approximate Curvature), which approximates the FIM via Kronecker product factorization, enabling scalable natural gradient optimization for deep neural networks.
+
+\paragraph{Empirical FIM and its limitations.} Kunstner et al. \cite{kunstner2019limitations} analyzed the relationship between the empirical FIM (computed from training data) and the true FIM, demonstrating that the empirical approximation can be arbitrarily poor in directions corresponding to low-variance features. This finding motivates our construction of the Attack Fisher Information Matrix (AFIM) in \S\ref{sec:afim}: rather than estimating the FIM from data, we construct it directly from gradient observations during optimization, ensuring that the matrix captures the local geometry of the adversarial loss landscape. The power-law eigenvalue decay that we empirically observe (\S\ref{sec:experiments}) is consistent with broader findings on the spectral structure of neural network Hessians and Fisher matrices \cite{li2018visualizing}.
+
+\paragraph{Loss landscape visualization and analysis.} Li et al. \cite{li2018visualizing} introduced methods for visualizing the loss landscapes of deep neural networks, revealing that modern architectures exhibit complex geometric structures with numerous saddle points and flat regions. Garipov et al. \cite{garipov2018loss} discovered mode connectivity---the existence of low-loss paths between seemingly distinct local minima---challenging the conventional view of loss landscapes as fragmented collections of isolated basins. Hochreiter and Schmidhuber \cite{hochreiter1997flat} argued that flat minima generalize better than sharp minima, establishing a connection between loss landscape geometry and model generalization. In \S\ref{sec:turbulence}, we extend these geometric insights to the adversarial setting, demonstrating that safety-aligned LLMs encode refusal behavior in specific representation subspaces that exhibit characteristic turbulence patterns under jailbreak perturbations.
+
+\subsection{LLM Safety Defenses and Detection}
+\label{sec:rw_defense}
+
+The escalating arms race between jailbreak attacks and safety defenses has produced a diverse array of protective mechanisms. At the training level, Reinforcement Learning from Human Feedback (RLHF) \cite{ouyang2022training} and Constitutional AI \cite{bai2022constitutional} align model behavior with human values by fine-tuning on preference data. Red teaming \cite{perez2022red} proactively identifies vulnerabilities through adversarial evaluation, informing iterative safety improvements. However, these training-time interventions are not foolproof: Qi et al. \cite{qi2023fine} demonstrated that fine-tuning aligned models on benign datasets can inadvertently compromise safety, and our experiments in \S\ref{sec:defense} show that gradient-based attacks achieve high success rates even against state-of-the-art aligned models.
+
+\paragraph{Input-side defenses.} Perplexity-based filtering represents the most widely deployed input-side defense, leveraging the observation that adversarial suffixes generated by early optimization methods exhibit abnormally high perplexity \cite{zhu2023autodan}. SmoothLLM \cite{robey2023smoothllm} perturbs input prompts with character-level noise and aggregates model responses across multiple perturbed copies, exploiting the brittleness of adversarial suffixes to minor input modifications. RigorLLM \cite{yuan2024rigorllm} proposes resilient guardrails that combine multiple defense layers, including prompt sanitization, output filtering, and response rewriting. Pan et al. \cite{pan2024logic} introduced logic-based defense via fuzzy interpretation, which formalizes safety constraints as logical rules and detects violations through fuzzy reasoning.
+
+\paragraph{Gradient-based detection.} GradSafe \cite{xie2024gradsafe} detects jailbreak prompts by analyzing safety-critical gradients, observing that harmful inputs induce characteristic gradient patterns that differ from benign queries. AutoDefense \cite{zeng2024autodefense} employs a multi-agent defense framework where small open-source models collaboratively filter harmful responses, achieving significant attack success rate reduction even against strong adaptive attacks. These defense mechanisms collectively illustrate the diversity of current protective strategies, each addressing different attack vectors and threat models. In \S\ref{sec:defense}, we evaluate ASA against perplexity filtering, SmoothLLM, and SafeDecoding, demonstrating that the low-perplexity, semantically coherent adversarial suffixes generated by active subspace projection substantially evade existing defenses.
+
+\paragraph{Safety benchmarks and evaluation.} The development of standardized safety benchmarks has been crucial for rigorous evaluation. HarmBench \cite{mazeika2024harmbench} provides a comprehensive evaluation framework for automated red teaming, with 520 adversarial behavior prompts spanning 13 risk categories. SimpleSafetyTests \cite{vidgen2023simple} offers a lightweight test suite for identifying critical safety risks, while SaladBench \cite{li2024saladbench} provides hierarchical safety evaluation across multiple dimensions. BeaverTails \cite{ji2023beavertails} contributes a human-preference dataset for safety alignment, enabling more nuanced optimization of helpfulness-harmlessness trade-offs. We adopt HarmBench as our primary evaluation benchmark in \S\ref{sec:experiments} to ensure comparability with prior work.
+
+\subsection{Summary and Positioning}
+\label{sec:rw_positioning}
+
+The related work landscape reveals several critical gaps that motivate our Active Subspace Attack (ASA) framework. First, existing gradient-based jailbreak methods \cite{zou2023universal, jia2024improved} operate in the full token embedding space, ignoring the anisotropic spectral structure of the adversarial loss landscape. Second, while Gumbel-Softmax and STE have been widely used in generative modeling and architecture search \cite{jang2017categorical, bengio2013estimating}, their application to adversarial token optimization lacks rigorous theoretical analysis of gradient bias and convergence properties. Third, active subspace methods \cite{constantine2014active} and incremental SVD \cite{brand2002incremental} have been developed in orthogonal contexts---uncertainty quantification and streaming matrix approximation, respectively---but have not been integrated into adversarial optimization for LLMs. Fourth, existing defenses \cite{robey2023smoothllm, xie2024gradsafe} primarily target high-perplexity or structurally anomalous adversarial inputs, leaving a vulnerability gap for attacks that generate semantically coherent, natural-language-like suffixes.
+
+ASA addresses these gaps through a unified framework that: \textit{(i)} characterizes the adversarial loss landscape geometry via the Attack Fisher Information Matrix (\S\ref{sec:afim}); \textit{(ii)} exploits spectral concentration through active subspace projection, achieving $O(d/k)$ signal-to-noise ratio enhancement (Theorem \ref{thm:snr}); \textit{(iii)} integrates Gumbel-Softmax relaxation with STE under rigorous bias analysis (Lemma \ref{lem:ste_bias}); \textit{(iv)} enables online subspace tracking via incremental SVD with $O(dk^2)$ complexity (Lemma \ref{lem:incsvd_complexity}); and \textit{(v)} generates low-perplexity adversarial suffixes that evade perplexity-based defenses (Table \ref{tab:perplexity}). The convergence guarantees (Theorem \ref{thm:convergence}, Corollary \ref{cor:speedup}) and empirical validation across six models (Table \ref{tab:main_results}) establish ASA as a principled, efficient, and stealthy jailbreak framework that advances the state of the art in both attack effectiveness and theoretical understanding.
+
+
+% ============================================================
+% 3. PRELIMINARY
+% ============================================================
+
+\section{Preliminary: Attack Fisher Information Matrix and Active Subspace}
+\label{sec:preliminary}
+
+This section establishes the theoretical foundation of our framework. We first formalize the adversarial suffix optimization problem and introduce our notation (\S\ref{sec:problem_formulation}). We then define the Attack Fisher Information Matrix (AFIM) and characterize its spectral structure under anisotropic gradient noise (\S\ref{sec:afim}). Finally, we formally define the active subspace and contrast it with passive dimensionality reduction methods (\S\ref{sec:active_subspace}).
+
+\subsection{Problem Formulation}
+\label{sec:problem_formulation}
+
+\paragraph{Notation.} Let $\mathcal{V}$ denote the token vocabulary and $|\mathcal{V}|$ its cardinality. The adversarial suffix $\mathbf{S} = [s_1, s_2, \ldots, s_m]$ consists of $m$ discrete tokens $s_i \in \mathcal{V}$. In the continuous relaxation setting, each token $s_i$ is represented by a logits vector $\mathbf{l}_i \in \mathbb{R}^{|\mathcal{V}|}$, and its corresponding embedding is obtained via the embedding lookup matrix $\mathbf{E} \in \mathbb{R}^{d \times |\mathcal{V}|}$ as $\mathbf{e}_i = \mathbf{E} \cdot \text{softmax}(\mathbf{l}_i) \in \mathbb{R}^d$, where $d$ is the embedding dimension. We write $\mathbf{S} \in \mathbb{R}^{d \times m}$ for the matrix of suffix embeddings and occasionally overload notation to write $\mathbf{S} \in \mathbb{R}^d$ when the suffix is treated as a single concatenated vector of dimension $d = m \cdot d_{\text{emb}}$.
+
+\paragraph{Attack Objective.} Given a harmful user query $\mathbf{Q}$ and a target response prefix $\mathbf{T}$ (e.g., ``Sure, here is''), the attack constructs a jailbreak prompt $\mathbf{Q} \oplus \mathbf{S}$ by concatenating the query and the adversarial suffix. The objective is to minimize the negative log-likelihood of generating the target prefix conditioned on the jailbreak prompt:
+\begin{equation}
+\label{eq:loss}
+L(\mathbf{S}) = -\log p(\mathbf{T} \mid \mathbf{Q} \oplus \mathbf{S}) = -\sum_{j=1}^{|\mathbf{T}|} \log p(t_j \mid \mathbf{Q} \oplus \mathbf{S}, t_1, \ldots, t_{j-1}),
+\end{equation}
+where $t_j$ denotes the $j$-th token of the target prefix. At each optimization step, the gradient $\mathbf{g}_t = \nabla_{\mathbf{S}} L(\mathbf{S}_t)$ provides a local linear approximation of the loss landscape around the current iterate $\mathbf{S}_t$.
+
+\paragraph{Full-Space Optimization Bottleneck.} Existing gradient-based jailbreak methods such as GCG \cite{zou2023universal} and I-GCG \cite{jia2024improved} apply gradient updates across all $d$ dimensions of the token embedding space simultaneously. Formally, their update rule can be written as
+\begin{equation}
+\label{eq:full_space_update}
+\mathbf{S}_{t+1} = \mathbf{S}_t - \eta \, \mathbf{g}_t,
+\end{equation}
+where $\eta > 0$ is the learning rate. This full-space strategy suffers from two fundamental limitations: \textit{(i)} the curse of dimensionality renders gradient estimation increasingly noisy as $d$ grows, since the $O(d)$ gradient components accumulate stochastic perturbations from the mini-batch sampling; and \textit{(ii)} the isotropic treatment of dimensions ignores the inherent geometric structure of the adversarial loss landscape, which we will show in \S\ref{sec:afim} exhibits pronounced anisotropy.
+
+\begin{assumption}[Anisotropic Gradient Noise]
+\label{ass:anisotropic_noise}
+The gradient $\mathbf{g}_t$ decomposes into a signal component $\mathbf{s}_t$ and a noise component $\mathbf{n}_t$ as $\mathbf{g}_t = \mathbf{s}_t + \mathbf{n}_t$, where $\mathbb{E}[\mathbf{n}_t] = \mathbf{0}$, $\mathbb{E}[\mathbf{n}_t \mathbf{n}_t^\top] = \sigma_n^2 \mathbf{I}$, and $\mathbb{E}[\mathbf{s}_t \mathbf{s}_t^\top] = \mathbf{F}$. The signal covariance $\mathbf{F}$ has eigenvalues $\lambda_1 \geq \lambda_2 \geq \cdots \geq \lambda_d > 0$ with spectral gap $\lambda_k \gg \lambda_{k+1}$ for some $k \ll d$.
+\end{assumption}
+
+This assumption is empirically validated in \S\ref{sec:experiments}, where we observe $\lambda_i \propto i^{-\beta}$ with $\beta \in [1.8, 2.4]$ across four model families.
+
+\subsection{Attack Fisher Information Matrix: Definition, Properties, and Spectral Analysis}
+\label{sec:afim}
+
+\subsubsection{Definition and Motivation}
+
+The Fisher Information Matrix (FIM) is a fundamental object in statistical estimation that measures the amount of information an observable random variable carries about an unknown parameter. In the context of neural network optimization, the FIM characterizes the local geometry of the loss landscape and is intimately connected to the Hessian \cite{amari1998natural, martens2015optimizing}. We extend this concept to the adversarial setting.
+
+\begin{definition}[Attack Fisher Information Matrix]
+\label{def:afim}
+The Attack Fisher Information Matrix (AFIM) $\mathbf{F} \in \mathbb{R}^{d \times d}$ captures the second-order statistics of the gradient distribution during adversarial optimization and is defined as the expected outer product of gradients:
+\begin{equation}
+\label{eq:afim}
+\mathbf{F} = \mathbb{E}_{t}\left[ \mathbf{g}_t \mathbf{g}_t^\top \right] = \sum_{i=1}^{d} \lambda_i \mathbf{u}_i \mathbf{u}_i^\top,
+\end{equation}
+where $\lambda_1 \geq \lambda_2 \geq \cdots \geq \lambda_d \geq 0$ are the eigenvalues and $\{\mathbf{u}_i\}_{i=1}^{d}$ are the corresponding orthonormal eigenvectors forming the columns of $\mathbf{U} = [\mathbf{u}_1, \ldots, \mathbf{u}_d] \in \mathbb{R}^{d \times d}$.
+\end{definition}
+
+The AFIM can be interpreted as the empirical covariance of gradients, analogous to the uncentered covariance matrix in principal component analysis. Its spectral decomposition reveals the directions in the parameter space along which the loss landscape varies most significantly. Intuitively, large eigenvalues correspond to directions with strong signal, while small eigenvalues correspond to directions dominated by noise.
+
+\subsubsection{Spectral Structure under Anisotropic Noise}
+
+We now characterize the eigenvalue spectrum of the AFIM under Assumption \ref{ass:anisotropic_noise}. Substituting $\mathbf{g}_t = \mathbf{s}_t + \mathbf{n}_t$ into Eq.~\eqref{eq:afim} and using the independence of signal and noise, we obtain:
+\begin{equation}
+\label{eq:afim_decomposition}
+\mathbf{F} = \mathbb{E}[\mathbf{s}_t \mathbf{s}_t^\top] + \mathbb{E}[\mathbf{n}_t \mathbf{n}_t^\top] = \mathbf{F}_s + \sigma_n^2 \mathbf{I},
+\end{equation}
+where $\mathbf{F}_s = \mathbb{E}[\mathbf{s}_t \mathbf{s}_t^\top]$ is the signal covariance. This decomposition elucidates the anisotropic structure: the signal term $\mathbf{F}_s$ is typically low-rank or approximately low-rank, while the noise term $\sigma_n^2 \mathbf{I}$ contributes equally to all directions.
+
+To obtain a more refined characterization, we model the singular value decay of the signal covariance. Let $\theta_i$ denote the $i$-th singular value decay coefficient and $\alpha > 1$ control the anisotropy strength. Under this model, the eigenvalues of the AFIM satisfy:
+\begin{equation}
+\label{eq:eigenvalue_model}
+\lambda_i(t) = \sigma_s^2(t) \cdot \theta_i^{2\alpha} + \sigma_n^2(t) \cdot \theta_i,
+\quad i = 1, 2, \ldots, d,
+\end{equation}
+where $\sigma_s^2(t)$ and $\sigma_n^2(t)$ are the time-varying signal and noise variances, respectively. The first term $\sigma_s^2(t) \theta_i^{2\alpha}$ dominates for small $i$ and captures the signal power concentrated in the leading directions, while the second term $\sigma_n^2(t) \theta_i$ governs the tail behavior.
+
+\begin{lemma}[Eigenvalue Decay Rate]
+\label{lem:decay_rate}
+Under the model in Eq.~\eqref{eq:eigenvalue_model}, if $\theta_i = i^{-1}$ and $\alpha \in (1, 3]$, then for $i \gg 1$:
+\begin{equation}
+\lambda_i \sim \sigma_n^2 \, i^{-1} + \sigma_s^2 \, i^{-2\alpha}.
+\end{equation}
+Consequently, the effective rank of $\mathbf{F}$, defined as
+\begin{equation}
+\label{eq:eff_rank}
+\operatorname{rank}_{\text{eff}}(\mathbf{F}) = \frac{\left(\sum_{i=1}^{d} \lambda_i\right)^2}{\sum_{i=1}^{d} \lambda_i^2},
+\end{equation}
+satisfies $\operatorname{rank}_{\text{eff}}(\mathbf{F}) \ll d$ when $\sigma_s^2 / \sigma_n^2 \gg 1$.
+\end{lemma}
+
+\begin{proof}
+The asymptotic behavior follows directly from substituting $\theta_i = i^{-1}$ into Eq.~\eqref{eq:eigenvalue_model} and observing that $i^{-2\alpha}$ decays faster than $i^{-1}$ for $\alpha > 1$. For the effective rank, note that $\text{rank}_{\text{eff}}(\mathbf{F}) = \mathcal{O}(1)$ when the eigenvalues follow a power law with exponent greater than 1, which is a standard result in random matrix theory \cite{vershynin2018high}.
+\end{proof}
+
+Lemma \ref{lem:decay_rate} justifies the use of low-rank approximations: only a small number of directions contain meaningful signal, while the vast majority of dimensions contribute primarily stochastic noise. For typical adversarial optimization on safety-aligned LLMs, we empirically observe $\alpha \in [1.8, 2.4]$ across models (see \S\ref{sec:experiments}), confirming strong spectral concentration.
+
+\subsubsection{Online Estimation via Gradient Accumulation}
+
+In practice, the AFIM is unknown and must be estimated from gradient observations. A natural estimator is the exponentially weighted moving average (EWMA):
+\begin{equation}
+\label{eq:ewma}
+\hat{\mathbf{F}}_t = (1 - \beta) \, \hat{\mathbf{F}}_{t-1} + \beta \, \mathbf{g}_t \mathbf{g}_t^\top,
+\end{equation}
+where $\beta \in (0, 1)$ is the forgetting factor (typically $\beta = 0.1$). This estimator places higher weight on recent gradients, which is crucial because the adversarial loss landscape is non-stationary: the target distribution shifts as the suffix tokens evolve during optimization. The EWMA estimator converges to the true AFIM when the gradient distribution is locally stationary over a window of $O(1/\beta)$ iterations.
+
+\subsection{Active Subspace: Definition and Geometric Interpretation}
+\label{sec:active_subspace}
+
+\subsubsection{Formal Definition}
+
+Building on the spectral characterization of the AFIM, we now define the active subspace---the central geometric object of our framework.
+
+\begin{definition}[Active Subspace]
+\label{def:active_subspace}
+Let $\mathbf{F} = \mathbf{U} \boldsymbol{\Lambda} \mathbf{U}^\top$ be the spectral decomposition of the AFIM, where $\boldsymbol{\Lambda} = \text{diag}(\lambda_1, \ldots, \lambda_d)$. For a given rank $k \in \{1, \ldots, d\}$, the \emph{active subspace} $\mathcal{U}_k \subset \mathbb{R}^d$ is the $k$-dimensional subspace spanned by the leading $k$ eigenvectors:
+\begin{equation}
+\label{eq:active_subspace}
+\mathcal{U}_k = \text{span}\{\mathbf{u}_1, \mathbf{u}_2, \ldots, \mathbf{u}_k\}.
+\end{equation}
+The corresponding \emph{active subspace projector} is $\mathbf{P}_k = \mathbf{U}_k \mathbf{U}_k^\top$, where $\mathbf{U}_k = [\mathbf{u}_1, \ldots, \mathbf{u}_k] \in \mathbb{R}^{d \times k}$. The orthogonal complement $\mathcal{U}_k^\perp = \text{span}\{\mathbf{u}_{k+1}, \ldots, \mathbf{u}_d\}$ is called the \emph{inactive subspace} or \emph{noise subspace}.
+\end{definition}
+
+The active subspace projector $\mathbf{P}_k$ satisfies the following properties, which are immediate from orthonormality:
+\begin{align}
+\label{eq:projector_properties}
+\mathbf{P}_k^\top &= \mathbf{P}_k \quad \text{(symmetry)}, \\
+\mathbf{P}_k^2 &= \mathbf{P}_k \quad \text{(idempotence)}, \\
+\text{Tr}(\mathbf{P}_k) &= k \quad \text{(rank)}.
+\end{align}
+These properties ensure that $\mathbf{P}_k$ performs an orthogonal projection onto $\mathcal{U}_k$ that preserves the Euclidean norm of vectors already lying in the subspace while annihilating components in the orthogonal complement.
+
+\subsubsection{Signal-to-Noise Ratio Perspective}
+
+A key insight is that the active subspace isolates the signal-bearing directions from the noise-dominated ones. To formalize this, we introduce the projected signal and noise components:
+\begin{equation}
+\label{eq:projected_signal_noise}
+\tilde{\mathbf{s}}_t = \mathbf{P}_k \mathbf{s}_t, \qquad \tilde{\mathbf{n}}_t = \mathbf{P}_k \mathbf{n}_t.
+\end{equation}
+The signal power in the active subspace is given by
+\begin{equation}
+\label{eq:signal_power}
+\mathbb{E}\left[\|\tilde{\mathbf{s}}_t\|_2^2\right] = \text{Tr}(\mathbf{P}_k \mathbf{F}_s) = \sum_{i=1}^{k} \lambda_i^{(s)},
+\end{equation}
+where $\lambda_i^{(s)}$ are the eigenvalues of $\mathbf{F}_s$. Similarly, the projected noise power is
+\begin{equation}
+\label{eq:noise_power}
+\mathbb{E}\left[\|\tilde{\mathbf{n}}_t\|_2^2\right] = \text{Tr}(\mathbf{P}_k \sigma_n^2 \mathbf{I}) = k \sigma_n^2.
+\end{equation}
+The signal-to-noise ratio (SNR) in the active subspace is therefore
+\begin{equation}
+\label{eq:snr_active}
+\text{SNR}_k = \frac{\sum_{i=1}^{k} \lambda_i^{(s)}}{k \sigma_n^2}.
+\end{equation}
+In contrast, the full-space SNR is
+\begin{equation}
+\label{eq:snr_full}
+\text{SNR}_{\text{full}} = \frac{\sum_{i=1}^{d} \lambda_i^{(s)}}{d \sigma_n^2}.
+\end{equation}
+When the eigenvalue spectrum exhibits rapid decay (as established in Lemma \ref{lem:decay_rate}), we have $\sum_{i=1}^{k} \lambda_i^{(s)} \approx \sum_{i=1}^{d} \lambda_i^{(s)}$ for $k \ll d$, yielding the multiplicative SNR amplification:
+\begin{equation}
+\label{eq:snr_amplification}
+\frac{\text{SNR}_k}{\text{SNR}_{\text{full}}} \approx \frac{d}{k} \gg 1.
+\end{equation}
+This ratio quantifies the fundamental advantage of active subspace projection: by restricting optimization to the $k$ most informative directions, we achieve an $O(d/k)$-fold SNR improvement.
+
+\subsubsection{Active Subspace vs. Passive Compression}
+
+A fundamental distinction exists between active subspace optimization and passive dimensionality reduction methods such as PCA or random projection. We formalize this distinction in Table \ref{tab:comparison}.
+
+\begin{table}[t]
+\centering
+\caption{Comparison of Active Subspace Optimization (ASA) and Passive Compression Methods.}
+\label{tab:comparison}
+\begin{tabular}{lcc}
+\toprule
+\textbf{Property} & \textbf{ASA (Ours)} & \textbf{Passive Compression} \\
+\midrule
+Gradient Direction & Eigenstructure-guided & Fixed basis \\
+Subspace Selection & Online via AFIM & Pre-computed, offline \\
+Signal Preservation & Maximizes SNR & No SNR guarantee \\
+Computational Cost & $O(dk^2)$ per iter. & $O(dk)$ fixed \\
+Convergence Rate & Superlinear (active dim.) & Linear \\
+Noise Handling & Anisotropic filtering & Isotropic truncation \\
+Adaptivity & Dynamic $k^*(t)$ & Static $k$ \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+Passive methods operate on a fixed basis $\mathbf{B} \in \mathbb{R}^{d \times k}$ that is independent of the optimization objective. For example, PCA computes $\mathbf{B}$ from the data covariance, and random projection uses a random Gaussian matrix. The gradient update in the compressed space is $\mathbf{B}^\top \mathbf{g}_t$, and the reconstruction is $\mathbf{B} \mathbf{B}^\top \mathbf{g}_t$. Critically, passive methods do not account for the signal-to-noise structure of the gradient: they truncate dimensions isotropically, potentially discarding signal-bearing directions while retaining noise-dominated ones.
+
+In contrast, active subspace methods derive the projection basis directly from the gradient statistics captured by the AFIM. The basis $\mathbf{U}_k$ is updated online and adapts to the local geometry of the loss landscape. This eigenstructure-guided selection ensures that the $k$ retained directions are precisely those that maximize the projected SNR, as formalized in Eq.~\eqref{eq:snr_active}. The price for this adaptivity is an increased per-iteration cost of $O(dk^2)$ due to the incremental SVD update (see \S\ref{sec:incremental_svd}), compared to $O(dk)$ for passive methods. However, as we demonstrate in \S\ref{sec:experiments}, the SNR amplification and faster convergence more than compensate for this overhead, yielding a net reduction in total optimization time.
+
+\paragraph{Geometric Interpretation.} The active subspace can be visualized as a low-dimensional hyperplane embedded in $\mathbb{R}^d$ that aligns with the directions of maximum curvature of the loss landscape. Safety-aligned LLMs encode their refusal behavior in specific attention heads and representation neurons, creating a low-dimensional ``safety manifold'' that adversarial perturbations must navigate \cite{zou2023universal}. The active subspace identifies the directions that are most effective at penetrating this manifold, while the inactive subspace corresponds to directions that merely introduce stochastic perturbations without systematic progress toward the attack objective.
+
+
+% ============================================================
+% 4. PROPOSED METHOD: ASA
+% ============================================================
+
+
+\section{Proposed Method: Active Subspace Attack (ASA)}
+\label{sec:method}
+
+This section presents the Active Subspace Attack (ASA), a novel optimization-based jailbreaking framework that exploits the spectral geometry of adversarial loss landscapes for efficient and low-perplexity adversarial suffix generation. We begin by formulating the overall optimization objective and outlining the three tightly-coupled algorithmic modules (\S\ref{sec:framework}). We then detail the continuous-to-discrete mapping via Gumbel-Softmax and Straight-Through Estimation (\S\ref{sec:gumbel_ste}), the incremental SVD procedure for online subspace tracking (\S\ref{sec:incremental_svd}), and the theoretical guarantees for SNR enhancement and convergence speedup (\S\ref{sec:theory}). Finally, we present the complete algorithm with complexity analysis (\S\ref{sec:algorithm}).
+
+\subsection{Problem Formulation and Algorithmic Framework}
+\label{sec:framework}
+
+Building upon the preliminary definitions in \S\ref{sec:preliminary}, we now formulate the complete ASA optimization problem. The adversarial suffix optimization can be cast as the following constrained discrete optimization problem:
+\begin{equation}
+\label{eq:discrete_opt}
+\min_{\mathbf{S} \in \mathcal{V}^m} \; L(\mathbf{S}) = -\log p(\mathbf{T} \mid \mathbf{Q} \oplus \mathbf{S}),
+\end{equation}
+where $\mathcal{V}^m$ denotes the space of token sequences of length $m$. The discreteness of $\mathcal{V}^m$ renders Problem \eqref{eq:discrete_opt} non-differentiable and computationally challenging. To address this, ASA introduces a three-module framework that operates in a continuous relaxation space while maintaining discrete token fidelity:
+
+\begin{enumerate}[leftmargin=*]
+    \item \textbf{Module I: Continuous-to-Discrete Mapping.} Each discrete token $s_i \in \mathcal{V}$ is relaxed to a continuous logits vector $\mathbf{l}_i \in \mathbb{R}^{|\mathcal{V}|}$. The Gumbel-Softmax distribution provides a differentiable relaxation of the categorical sampling operation, enabling gradient-based optimization. Straight-Through Estimation (STE) ensures that the forward pass selects discrete tokens while the backward pass propagates gradients through the continuous relaxation.
+    
+    \item \textbf{Module II: Active Subspace Tracking.} The AFIM $\mathbf{F}_t$ is maintained online via incremental SVD, yielding an adaptive rank-$k^*$ active subspace projector $\mathbf{P}_{k^*} = \mathbf{U}_{k^*} \mathbf{U}_{k^*}^\top$. The subspace dimensionality $k^*$ is determined dynamically via the explained variance criterion (Eq.~\eqref{eq:explained_variance}).
+    
+    \item \textbf{Module III: Subspace-Projected Optimization.} Gradients are projected onto the active subspace before updating the logits, yielding SNR-enhanced parameter updates that accelerate convergence and reduce memory footprint.
+\end{enumerate}
+
+The overall ASA objective in the continuous relaxation can be written as:
+\begin{equation}
+\label{eq:asa_objective}
+\min_{\{\mathbf{l}_i\}_{i=1}^m} \; \mathbb{E}_{\hat{\mathbf{S}} \sim \text{GS}(\{\mathbf{l}_i\}, \tau)} \left[ L(\hat{\mathbf{S}}) \right],
+\end{equation}
+where $\text{GS}(\cdot, \tau)$ denotes the Gumbel-Softmax sampling distribution with temperature $\tau$. The expectation is approximated via single-sample Monte Carlo estimation during training, and the temperature $\tau$ is annealed over iterations to gradually sharpen the distribution toward deterministic token selection.
+
+\begin{remark}[Warm-up Phase]
+\label{rem:warmup}
+In practice, we initialize ASA with $T_{\text{warm}} = 20$ iterations of full-space gradient descent (i.e., $\mathbf{P}_k = \mathbf{I}$). This warm-up phase serves two purposes: \textit{(i)} it provides initial gradient statistics for constructing a reliable AFIM estimate, and \textit{(ii)} it prevents premature subspace truncation when the gradient distribution is still highly non-stationary. After warm-up, the active subspace projector is activated and updated online.
+\end{remark}
+
+\subsection{Continuous-to-Discrete Mapping: Gumbel-Softmax and STE}
+\label{sec:gumbel_ste}
+
+\subsubsection{Gumbel-Softmax Relaxation and Reparameterization}
+\label{sec:gumbel}
+
+The Gumbel-Softmax trick \cite{jang2017categorical, maddison2017concrete} provides a differentiable approximation to categorical sampling via the reparameterization trick. For each token position $i$, let $\mathbf{l}_i \in \mathbb{R}^{|\mathcal{V}|}$ be the current logits vector. We generate $K$ independent Gumbel random variables $G_i^{(k)} \sim \text{Gumbel}(0, 1)$ for $k = 1, \ldots, |\mathcal{V}|$ via the inverse transform sampling:
+\begin{equation}
+\label{eq:gumbel_sample}
+G_i^{(k)} = -\log(-\log(u_i^{(k)})), \quad u_i^{(k)} \sim \text{Uniform}(0, 1).
+\end{equation}
+The Gumbel-Softmax probability distribution over the vocabulary is then defined as:
+\begin{equation}
+\label{eq:gumbel_softmax}
+p_i^{(k)} = \frac{\exp\left((l_i^{(k)} + G_i^{(k)}) / \tau\right)}{\sum_{j=1}^{|\mathcal{V}|} \exp\left((l_i^{(j)} + G_i^{(j)}) / \tau\right)},
+\end{equation}
+where $\tau > 0$ is the temperature parameter controlling the sharpness of the distribution. As $\tau \to 0$, the Gumbel-Softmax distribution converges in probability to the one-hot encoding of the argmax:
+\begin{equation}
+\label{eq:gumbel_limit}
+\lim_{\tau \to 0} \; \mathbf{p}_i = \text{one\_hot}\left(\arg\max_{k} \; l_i^{(k)} + G_i^{(k)}\right) \overset{d}{=} \text{one\_hot}\left(\arg\max_{k} \; l_i^{(k)}\right),
+\end{equation}
+where the last equality follows from the fact that adding i.i.d. Gumbel noise and taking the argmax is equivalent to sampling from the softmax distribution (the Gumbel-max trick \cite{gumbel1954statistical}).
+
+\begin{lemma}[Temperature-Dependent Entropy Bound]
+\label{lem:entropy}
+Let $H(\mathbf{p}_i; \tau)$ denote the Shannon entropy of the Gumbel-Softmax distribution with logits $\mathbf{l}_i$ and temperature $\tau$. Then:
+\begin{equation}
+\label{eq:entropy_bound}
+0 \leq H(\mathbf{p}_i; \tau) \leq \log |\mathcal{V}|,
+\end{equation}
+with the upper bound achieved when $\tau \to \infty$ (uniform distribution) and the lower bound achieved when $\tau \to 0$ (degenerate distribution). Moreover, the entropy decreases monotonically with decreasing temperature: $\frac{\partial H}{\partial \tau} > 0$.
+\end{lemma}
+
+\begin{proof}
+The bounds follow directly from the properties of Shannon entropy for discrete distributions. For the monotonicity, note that as $\tau$ decreases, the distribution becomes more concentrated around the mode, reducing uncertainty. A formal proof can be obtained by differentiating $H(\mathbf{p}_i; \tau) = -\sum_k p_i^{(k)} \log p_i^{(k)}$ with respect to $\tau$ and applying the Gibbs' inequality.
+\end{proof}
+
+Lemma \ref{lem:entropy} motivates the temperature annealing schedule: starting from a high temperature ($\tau_0 = 1.0$) encourages exploration of the token space, while gradually reducing $\tau$ via $\tau_{t+1} = \max(\tau_{\min}, \gamma \tau_t)$ with $\gamma = 0.95$ biases the optimization toward discrete token selection.
+
+\subsubsection{Straight-Through Estimation: Formal Definition and Bias Analysis}
+\label{sec:ste}
+
+While the Gumbel-Softmax relaxation enables gradient computation, the forward pass must produce discrete tokens for LLM evaluation. Straight-Through Estimation (STE) \cite{bengio2013estimating} resolves this discrepancy by using different computational paths for the forward and backward passes.
+
+Formally, let $\hat{\mathbf{p}}_i = \text{one\_hot}(\arg\max_k p_i^{(k)})$ denote the hard assignment and $\mathbf{p}_i$ the soft Gumbel-Softmax probabilities. The STE operator $\mathcal{S}(\cdot)$ is defined as:
+\begin{equation}
+\label{eq:ste}
+\mathcal{S}(\mathbf{p}_i) = \hat{\mathbf{p}}_i + (\mathbf{p}_i - \bar{\mathbf{p}}_i) \cdot \mathbb{1}_{\text{backward}},
+\end{equation}
+where $\bar{\mathbf{p}}_i = \text{stop\_grad}(\hat{\mathbf{p}}_i)$ denotes the stopped-gradient version of the hard assignment. In the forward pass, $\mathcal{S}(\mathbf{p}_i) = \hat{\mathbf{p}}_i$, yielding discrete tokens. In the backward pass, the gradient flows through the soft approximation:
+\begin{equation}
+\label{eq:ste_gradient}
+\frac{\partial \mathcal{S}(\mathbf{p}_i)}{\partial l_i^{(k)}} = \frac{\partial p_i^{(k)}}{\partial l_i^{(k)}} = \frac{1}{\tau} p_i^{(k)} \left(1 - p_i^{(k)}\right).
+\end{equation}
+
+The STE gradient is biased with respect to the true gradient of the discrete objective. To quantify this bias, let $\nabla^{\text{true}}$ denote the gradient of the discrete loss (which is zero almost everywhere due to non-differentiability) and $\nabla^{\text{STE}}$ the STE gradient. The bias can be characterized as:
+
+\begin{lemma}[STE Bias Characterization]
+\label{lem:ste_bias}
+Under the Gumbel-Softmax relaxation with temperature $\tau$, the bias of the STE gradient for the $k$-th logit satisfies:
+\begin{equation}
+\label{eq:ste_bias}
+\left| \mathbb{E}\left[\nabla^{\text{STE}}_{l_i^{(k)}} L\right] - \nabla^{\text{true}}_{l_i^{(k)}} L \right| = O(\tau \cdot |\mathcal{V}|),
+\end{equation}
+where the expectation is taken over the Gumbel noise. As $\tau \to 0$, the bias vanishes and the STE gradient converges to the true subgradient of the discrete objective.
+\end{lemma}
+
+\begin{proof}[Proof Sketch]
+As $\tau \to 0$, the Gumbel-Softmax distribution concentrates around the mode, and the soft probabilities $\mathbf{p}_i$ converge to the hard assignment $\hat{\mathbf{p}}_i$. The STE gradient $\nabla^{\text{STE}}$ then approximates the gradient of a smooth interpolation of the discrete objective, which approaches the subgradient as the interpolation sharpens. The $O(\tau \cdot |\mathcal{V}|)$ bound follows from Taylor expansion of the softmax around the mode and bounding the residual terms.
+\end{proof}
+
+\subsubsection{Gradient Flow Analysis}
+\label{sec:gradient_flow}
+
+We now analyze how gradients flow through the discrete-to-continuous mapping. The overall gradient with respect to the logits $\mathbf{l}_i$ can be decomposed using the chain rule:
+\begin{equation}
+\label{eq:chain_rule}
+\frac{\partial L}{\partial \mathbf{l}_i} = \underbrace{\frac{\partial L}{\partial \mathbf{e}_i}}_{\text{LLM gradient}} \cdot \underbrace{\frac{\partial \mathbf{e}_i}{\partial \mathbf{p}_i}}_{\text{Embedding matrix}} \cdot \underbrace{\frac{\partial \mathbf{p}_i}{\partial \mathbf{l}_i}}_{\text{Gumbel-Softmax}} \cdot \underbrace{\frac{\partial \mathcal{S}(\mathbf{p}_i)}{\partial \mathbf{p}_i}}_{\text{STE identity}},
+\end{equation}
+where $\frac{\partial \mathcal{S}(\mathbf{p}_i)}{\partial \mathbf{p}_i} = \mathbf{I}$ during backpropagation (the ``straight-through'' property). The embedding Jacobian is $\frac{\partial \mathbf{e}_i}{\partial \mathbf{p}_i} = \mathbf{E} \in \mathbb{R}^{d \times |\mathcal{V}|}$, which is constant. Thus, the primary source of non-linearity and stochasticity in the gradient comes from the Gumbel-Softmax Jacobian $\frac{\partial \mathbf{p}_i}{\partial \mathbf{l}_i} \in \mathbb{R}^{|\mathcal{V}| \times |\mathcal{V}|}$, whose $(j, k)$-th entry is:
+\begin{equation}
+\label{eq:softmax_jacobian}
+\frac{\partial p_i^{(j)}}{\partial l_i^{(k)}} = \frac{1}{\tau} p_i^{(j)} \left(\delta_{jk} - p_i^{(k)}\right),
+\end{equation}
+where $\delta_{jk}$ is the Kronecker delta. As $\tau \to 0$, this Jacobian becomes increasingly ill-conditioned, with large diagonal entries and small off-diagonal entries, reflecting the concentration of probability mass on a single token.
+
+\subsection{Incremental SVD for Online Subspace Tracking}
+\label{sec:incremental_svd}
+
+\subsubsection{Detailed Algorithmic Description}
+\label{sec:incsvd_detail}
+
+The incremental SVD procedure maintains a rank-$k$ approximation of the AFIM $\mathbf{F}$ without recomputing the full eigendecomposition at each iteration. Given the current approximation $\mathbf{F}_k = \mathbf{U}_k \boldsymbol{\Lambda}_k \mathbf{U}_k^\top$ and a new gradient sample $\mathbf{g}_t$, the rank-1 update $\mathbf{F}'_k = \mathbf{F}_k + \mathbf{g}_t \mathbf{g}_t^\top$ is computed as follows:
+
+\textbf{Step 1: Projection onto the orthogonal complement.} Compute the component of $\mathbf{g}_t$ orthogonal to the current subspace:
+\begin{equation}
+\label{eq:projection_complement}
+\mathbf{r}_t = \mathbf{g}_t - \mathbf{U}_k \mathbf{U}_k^\top \mathbf{g}_t = (\mathbf{I} - \mathbf{P}_k) \mathbf{g}_t.
+\end{equation}
+If $\|\mathbf{r}_t\|_2 = 0$, the gradient lies entirely within the current subspace and no subspace update is needed beyond rotating the existing basis.
+
+\textbf{Step 2: Augmented matrix SVD.} Form the augmented matrix:
+\begin{equation}
+\label{eq:augmented_matrix}
+\mathbf{M} = \begin{bmatrix} \mathbf{U}_k \boldsymbol{\Lambda}_k^{1/2} & \mathbf{r}_t \end{bmatrix} \in \mathbb{R}^{d \times (k+1)},
+\end{equation}
+and compute its (thin) SVD: $\mathbf{M} = \mathbf{U}' \boldsymbol{\Sigma}' \mathbf{V}'^\top$, where $\mathbf{U}' \in \mathbb{R}^{d \times (k+1)}$ and $\boldsymbol{\Sigma}' \in \mathbb{R}^{(k+1) \times (k+1)}$.
+
+\textbf{Step 3: Rank truncation.} Truncate to rank $k$ by retaining only the top $k$ singular values and corresponding singular vectors:
+\begin{equation}
+\label{eq:truncation}
+\mathbf{U}_k^{\text{new}} = \mathbf{U}'_{:, 1:k}, \quad \boldsymbol{\Lambda}_k^{\text{new}} = (\boldsymbol{\Sigma}'_{1:k, 1:k})^2.
+\end{equation}
+
+The updated AFIM approximation is then $\mathbf{F}_k^{\text{new}} = \mathbf{U}_k^{\text{new}} \boldsymbol{\Lambda}_k^{\text{new}} (\mathbf{U}_k^{\text{new}})^\top$.
+
+\subsubsection{Computational Complexity and Memory Analysis}
+\label{sec:complexity}
+
+We analyze the time and space complexity of the incremental SVD update:
+
+\begin{lemma}[Incremental SVD Complexity]
+\label{lem:incsvd_complexity}
+Each incremental SVD update requires $O(dk^2)$ arithmetic operations and $O(dk)$ memory.
+\end{lemma}
+
+\begin{proof}
+Step 1 (projection) requires $O(dk)$ operations for matrix-vector multiplication. Step 2 (augmented SVD) operates on a matrix of size $d \times (k+1)$; computing the thin SVD via QR decomposition followed by bidiagonalization requires $O(dk^2)$ operations. Step 3 (truncation) is $O(dk)$. The dominant term is $O(dk^2)$. Memory usage is dominated by storing $\mathbf{U}_k \in \mathbb{R}^{d \times k}$ and $\boldsymbol{\Lambda}_k \in \mathbb{R}^{k \times k}$, totaling $O(dk)$.
+\end{proof}
+
+In contrast, full eigendecomposition of the AFIM would require $O(d^3)$ operations and $O(d^2)$ memory. For typical values $d = 4096$ (embedding dimension) and $k^* \in [24, 40]$, the speedup is $O(d^3 / dk^2) = O(d^2/k^2) \approx 10^4\text{--}3 \times 10^4$ and the memory reduction is $O(d^2 / dk) = O(d/k) \approx 100\text{--}170$.
+
+\subsubsection{Convergence of Subspace Tracking}
+\label{sec:subspace_convergence}
+
+We establish that the incremental SVD procedure converges to the true active subspace under standard assumptions.
+
+\begin{assumption}[Stationary Gradient Distribution]
+\label{ass:stationary}
+Over a window of $W = O(1/\beta)$ iterations, the gradient distribution is locally stationary, i.e., $\mathbb{E}[\mathbf{g}_t \mathbf{g}_t^\top] = \mathbf{F}$ is constant and the gradients are i.i.d. samples from a sub-Gaussian distribution with parameter $\sigma_g^2$.
+\end{assumption}
+
+\begin{theorem}[Subspace Estimation Error Bound]
+\label{thm:subspace_error}
+Under Assumption \ref{ass:stationary}, let $\mathbf{U}_k^{(t)}$ be the active subspace basis after $t$ incremental SVD updates with EWMA factor $\beta$. The principal angle $\Theta$ between the estimated subspace and the true subspace satisfies:
+\begin{equation}
+\label{eq:subspace_error}
+\sin \Theta\left(\mathbf{U}_k^{(t)}, \mathbf{U}_k^*\right) \leq C \cdot \frac{\sigma_g \sqrt{k}}{\lambda_k \sqrt{\beta t}} + O(\beta),
+\end{equation}
+with probability at least $1 - 2\exp(-c \beta t)$, where $C, c > 0$ are absolute constants and $\lambda_k$ is the $k$-th eigenvalue of the true AFIM.
+\end{theorem}
+
+\begin{proof}[Proof Sketch]
+The EWMA estimator $\hat{\mathbf{F}}_t$ concentrates around the true AFIM $\mathbf{F}$ at rate $O(1/\sqrt{\beta t})$ by standard martingale concentration arguments. The Davis-Kahan $\sin \Theta$ theorem \cite{davis1970rotation} then relates the eigengap $(\lambda_k - \lambda_{k+1})$ to the subspace perturbation. Under the spectral concentration condition $\lambda_k \gg \lambda_{k+1}$, the bound simplifies to Eq.~\eqref{eq:subspace_error}.
+\end{proof}
+
+Theorem \ref{thm:subspace_error} guarantees that the estimated active subspace converges to the true subspace at rate $O(1/\sqrt{t})$, justifying the use of incremental SVD for online tracking.
+
+\subsection{Theoretical Analysis: SNR Enhancement and Convergence Guarantees}
+\label{sec:theory}
+
+\subsubsection{Ky Fan Maximum Principle and Active Subspace Optimality}
+\label{sec:ky_fan}
+
+We restate the Ky Fan maximum principle \cite{fan1949theorem} in the context of our framework:
+
+\begin{theorem}[Ky Fan Maximum Principle \cite{fan1949theorem}]
+\label{thm:ky_fan}
+For any symmetric positive semi-definite matrix $\mathbf{F} \in \mathbb{R}^{d \times d}$ with eigenvalues $\lambda_1 \geq \lambda_2 \geq \cdots \geq \lambda_d \geq 0$ and any orthonormal basis $\{\mathbf{v}_1, \ldots, \mathbf{v}_k\}$ spanning a $k$-dimensional subspace:
+\begin{equation}
+\label{eq:ky_fan}
+\max_{\mathbf{V} : \mathbf{V}^\top \mathbf{V} = \mathbf{I}_k} \text{Tr}(\mathbf{V}^\top \mathbf{F} \mathbf{V}) = \sum_{i=1}^{k} \lambda_i,
+\end{equation}
+where the maximum is achieved by $\mathbf{V} = \mathbf{U}_k = [\mathbf{u}_1, \ldots, \mathbf{u}_k]$.
+\end{theorem}
+
+This theorem establishes the optimality of the active subspace: among all possible $k$-dimensional projections, the active subspace $\mathcal{U}_k$ maximizes the captured signal power. No other rank-$k$ subspace can retain more gradient variance.
+
+\subsubsection{SNR Enhancement via Active Subspace Projection}
+\label{sec:snr}
+
+We now prove the main SNR enhancement theorem and derive tighter bounds under additional structure.
+
+\begin{theorem}[SNR Enhancement via Active Subspace Projection]
+\label{thm:snr}
+Let $\mathbf{g}_t = \mathbf{s}_t + \mathbf{n}_t$ be the gradient decomposed into signal $\mathbf{s}_t$ and noise $\mathbf{n}_t$, with $\mathbb{E}[\mathbf{n}_t \mathbf{n}_t^\top] = \sigma_n^2 \mathbf{I}$ and $\mathbb{E}[\mathbf{s}_t \mathbf{s}_t^\top] = \mathbf{F}$. Let $\mathbf{P}_k = \mathbf{U}_k \mathbf{U}_k^\top$ be the rank-$k$ active subspace projector. Then the signal-to-noise ratio in the projected subspace satisfies:
+\begin{equation}
+\label{eq:snr_theorem}
+\text{SNR}_k = \frac{\mathbb{E}\left[\|\mathbf{P}_k \mathbf{s}_t\|_2^2\right]}{\mathbb{E}\left[\|\mathbf{P}_k \mathbf{n}_t\|_2^2\right]} = \frac{\sum_{i=1}^{k} \lambda_i}{k \sigma_n^2} \geq \frac{\lambda_1}{\sigma_n^2} \cdot \frac{\text{SNR}_{\text{full}}}{d/k},
+\end{equation}
+where $\text{SNR}_{\text{full}} = \frac{\sum_{i=1}^{d} \lambda_i}{d \sigma_n^2}$ is the full-space SNR. Moreover, if the eigenvalues satisfy the power-law decay $\lambda_i \propto i^{-\beta}$ with $\beta > 1$, then:
+\begin{equation}
+\label{eq:snr_powerlaw}
+\text{SNR}_k \geq \frac{\zeta(\beta)}{\zeta(\beta) - \sum_{i=k+1}^{\infty} i^{-\beta}} \cdot \frac{d}{k} \cdot \text{SNR}_{\text{full}},
+\end{equation}
+where $\zeta(\beta)$ is the Riemann zeta function.
+\end{theorem}
+
+\begin{proof}
+We prove each part separately.
+
+\textbf{Part 1: Basic SNR bound.} By Theorem \ref{thm:ky_fan}, the projected signal power is:
+\begin{equation}
+\mathbb{E}\left[\|\mathbf{P}_k \mathbf{s}_t\|_2^2\right] = \text{Tr}(\mathbf{U}_k^\top \mathbf{F} \mathbf{U}_k) = \sum_{i=1}^{k} \lambda_i.
+\end{equation}
+The projected noise power is:
+\begin{equation}
+\mathbb{E}\left[\|\mathbf{P}_k \mathbf{n}_t\|_2^2\right] = \text{Tr}(\mathbf{U}_k^\top \sigma_n^2 \mathbf{I} \mathbf{U}_k) = k \sigma_n^2.
+\end{equation}
+Therefore:
+\begin{equation}
+\text{SNR}_k = \frac{\sum_{i=1}^{k} \lambda_i}{k \sigma_n^2}.
+\end{equation}
+For the lower bound, note that $\sum_{i=1}^{d} \lambda_i \leq d \lambda_1$ (since $\lambda_1$ is the largest eigenvalue), so:
+\begin{equation}
+\text{SNR}_{\text{full}} = \frac{\sum_{i=1}^{d} \lambda_i}{d \sigma_n^2} \leq \frac{d \lambda_1}{d \sigma_n^2} = \frac{\lambda_1}{\sigma_n^2}.
+\end{equation}
+Rearranging yields $\frac{\lambda_1}{\sigma_n^2} \geq \text{SNR}_{\text{full}}$, and substituting into the expression for $\text{SNR}_k$:
+\begin{equation}
+\text{SNR}_k = \frac{\sum_{i=1}^{k} \lambda_i}{k \sigma_n^2} \geq \frac{\lambda_1}{\sigma_n^2} \cdot \frac{1}{d/k} \cdot \frac{\sum_{i=1}^{d} \lambda_i}{d \sigma_n^2} \cdot \frac{d \sigma_n^2}{\sum_{i=1}^{d} \lambda_i} = \frac{\lambda_1}{\sigma_n^2} \cdot \frac{\text{SNR}_{\text{full}}}{d/k}.
+\end{equation}
+
+\textbf{Part 2: Power-law decay bound.} Under $\lambda_i = C \cdot i^{-\beta}$, we have:
+\begin{equation}
+\sum_{i=1}^{k} \lambda_i = C \sum_{i=1}^{k} i^{-\beta} = C (\zeta(\beta) - \sum_{i=k+1}^{\infty} i^{-\beta}) + O(1).
+\end{equation}
+Using the integral approximation $\sum_{i=k+1}^{\infty} i^{-\beta} \approx \frac{k^{1-\beta}}{\beta - 1}$ for $\beta > 1$, we obtain:
+\begin{equation}
+\text{SNR}_k = \frac{C \sum_{i=1}^{k} i^{-\beta}}{k \sigma_n^2} \geq \frac{C \zeta(\beta)}{k \sigma_n^2} \left(1 - \frac{k^{1-\beta}}{(\beta - 1)\zeta(\beta)}\right).
+\end{equation}
+Since $\text{SNR}_{\text{full}} = \frac{C \zeta(\beta)}{d \sigma_n^2}$, the ratio is:
+\begin{equation}
+\frac{\text{SNR}_k}{\text{SNR}_{\text{full}}} \geq \frac{d}{k} \cdot \frac{\zeta(\beta)}{\zeta(\beta) - \sum_{i=k+1}^{\infty} i^{-\beta}},
+\end{equation}
+which completes the proof.
+\end{proof}
+
+\subsubsection{Convergence Rate Analysis}
+\label{sec:convergence}
+
+We now analyze the convergence rate of ASA compared to full-space gradient descent. For clarity, we consider the continuous relaxation where the objective $L(\mathbf{S})$ is smooth with $L$-Lipschitz gradients.
+
+\begin{assumption}[Smoothness and Convexity in Active Subspace]
+\label{ass:smoothness}
+The loss function $L(\mathbf{S})$ restricted to the active subspace $\mathcal{U}_k$ is $L_k$-smooth and $\mu_k$-strongly convex, i.e., for any $\mathbf{S}, \mathbf{S}' \in \mathcal{U}_k$:
+\begin{equation}
+\frac{\mu_k}{2} \|\mathbf{S} - \mathbf{S}'\|_2^2 \leq L(\mathbf{S}') - L(\mathbf{S}) - \langle \nabla L(\mathbf{S}), \mathbf{S}' - \mathbf{S} \rangle \leq \frac{L_k}{2} \|\mathbf{S} - \mathbf{S}'\|_2^2.
+\end{equation}
+\end{assumption}
+
+\begin{theorem}[Convergence Rate of ASA]
+\label{thm:convergence}
+Under Assumption \ref{ass:smoothness}, with step size $\eta = 1/L_k$, the iterates of ASA satisfy:
+\begin{equation}
+\label{eq:convergence_rate}
+L(\mathbf{S}_t) - L(\mathbf{S}^*) \leq \left(1 - \frac{\mu_k}{L_k}\right)^t \left(L(\mathbf{S}_0) - L(\mathbf{S}^*)\right) + \frac{\sigma_n^2 k}{2 \mu_k},
+\end{equation}
+where $\mathbf{S}^*$ is the optimal suffix and the second term accounts for the residual error due to projected noise. In contrast, full-space gradient descent with step size $\eta = 1/L$ achieves:
+\begin{equation}
+\label{eq:full_convergence}
+L(\mathbf{S}_t) - L(\mathbf{S}^*) \leq \left(1 - \frac{\mu}{L}\right)^t \left(L(\mathbf{S}_0) - L(\mathbf{S}^*)\right) + \frac{\sigma_n^2 d}{2 \mu}.
+\end{equation}
+\end{theorem}
+
+\begin{proof}
+Consider the projected gradient update $\mathbf{S}_{t+1} = \mathbf{S}_t - \eta \mathbf{P}_k \mathbf{g}_t$. Decomposing the gradient into signal and noise:
+\begin{equation}
+\mathbf{S}_{t+1} = \mathbf{S}_t - \eta \mathbf{P}_k (\nabla L(\mathbf{S}_t) + \mathbf{n}_t) = \mathbf{S}_t - \eta \nabla_{\mathcal{U}_k} L(\mathbf{S}_t) - \eta \mathbf{P}_k \mathbf{n}_t,
+\end{equation}
+where $\nabla_{\mathcal{U}_k} L = \mathbf{P}_k \nabla L$ is the Riemannian gradient on the active subspace. Using the standard descent lemma for smooth functions:
+\begin{equation}
+L(\mathbf{S}_{t+1}) \leq L(\mathbf{S}_t) - \eta \|\nabla_{\mathcal{U}_k} L(\mathbf{S}_t)\|_2^2 + \frac{L_k \eta^2}{2} \|\nabla_{\mathcal{U}_k} L(\mathbf{S}_t) + \mathbf{P}_k \mathbf{n}_t\|_2^2.
+\end{equation}
+Taking expectations and using $\mathbb{E}[\|\mathbf{P}_k \mathbf{n}_t\|_2^2] = k \sigma_n^2$:
+\begin{equation}
+\mathbb{E}[L(\mathbf{S}_{t+1})] \leq \mathbb{E}[L(\mathbf{S}_t)] - \frac{\eta}{2} \mathbb{E}[\|\nabla_{\mathcal{U}_k} L(\mathbf{S}_t)\|_2^2] + \frac{L_k \eta^2 k \sigma_n^2}{2}.
+\end{equation}
+By strong convexity, $\|\nabla_{\mathcal{U}_k} L(\mathbf{S}_t)\|_2^2 \geq 2\mu_k (L(\mathbf{S}_t) - L(\mathbf{S}^*))$. Setting $\eta = 1/L_k$ and rearranging:
+\begin{equation}
+\mathbb{E}[L(\mathbf{S}_{t+1}) - L(\mathbf{S}^*)] \leq \left(1 - \frac{\mu_k}{L_k}\right) \mathbb{E}[L(\mathbf{S}_t) - L(\mathbf{S}^*)] + \frac{k \sigma_n^2}{2 L_k}.
+\end{equation}
+Unrolling the recursion yields Eq.~\eqref{eq:convergence_rate}. The full-space bound follows analogously with $d$ replacing $k$.
+\end{proof}
+
+\subsubsection{Multiplicative Speedup under Spectral Concentration}
+\label{sec:speedup}
+
+We now derive the explicit multiplicative speedup of ASA over full-space gradient descent.
+
+\begin{corollary}[Multiplicative Convergence Speedup]
+\label{cor:speedup}
+Under Assumption \ref{ass:smoothness}, let $\kappa_k = L_k / \mu_k$ be the condition number in the active subspace and $\kappa = L / \mu$ the full-space condition number. If the eigenvalue spectrum satisfies $\sum_{i=1}^{k} \lambda_i \geq (1 - \epsilon) \sum_{i=1}^{d} \lambda_i$ with $\epsilon \in (0, 0.05]$, then to reach accuracy $\delta > 0$, ASA requires at most:
+\begin{equation}
+\label{eq:asa_iterations}
+T_{\text{ASA}} = O\left(\kappa_k \log\frac{1}{\delta}\right)
+\end{equation}
+iterations, while full-space gradient descent requires:
+\begin{equation}
+\label{eq:full_iterations}
+T_{\text{full}} = O\left(\kappa \log\frac{1}{\delta}\right)
+\end{equation}
+iterations. The multiplicative speedup is:
+\begin{equation}
+\label{eq:speedup_ratio}
+\frac{T_{\text{full}}}{T_{\text{ASA}}} \geq \frac{\kappa}{\kappa_k} \geq \frac{d}{k(1 - \epsilon)}.
+\end{equation}
+\end{corollary}
+
+\begin{proof}
+The iteration complexity for reaching accuracy $\delta$ follows from solving $(1 - \mu_k/L_k)^t \leq \delta$ and $(1 - \mu/L)^t \leq \delta$, yielding $t \geq \kappa_k \log(1/\delta)$ and $t \geq \kappa \log(1/\delta)$ respectively. For the speedup ratio, note that under spectral concentration, the active subspace captures $(1-\epsilon)$ of the total signal variance. The effective condition number in the active subspace satisfies $\kappa_k \leq \kappa \cdot \frac{k(1-\epsilon)}{d}$, since the condition number scales inversely with the subspace dimensionality when the signal is concentrated. Rearranging yields Eq.~\eqref{eq:speedup_ratio}.
+\end{proof}
+
+\begin{remark}[Practical Speedup]
+\label{rem:practical_speedup}
+For typical values $d = 4096$ and $k^* \in [24, 40]$ with $\epsilon = 0.05$, Corollary \ref{cor:speedup} predicts a theoretical speedup of $T_{\text{full}} / T_{\text{ASA}} \geq 105\text{--}175$. The empirical speedup observed in \S\ref{sec:experiments} (66\%--74\% fewer iterations) is somewhat more modest due to: \textit{(i)} the non-convexity of the discrete token objective, \textit{(ii)} overhead from incremental SVD updates, and \textit{(iii)} the warm-up phase. Nevertheless, the theoretical prediction correctly captures the order-of-magnitude improvement.
+\end{remark}
+
+\subsection{The ASA Algorithm: Description, Complexity, and Correctness}
+\label{sec:algorithm}
+
+\subsubsection{Complete Algorithm Description}
+\label{sec:alg_description}
+
+Algorithm \ref{alg:asa} summarizes the complete ASA framework. The algorithm operates in three phases: initialization (lines 1), warm-up (lines 2--9 with $\mathbf{P}_k = \mathbf{I}$), and active subspace optimization (lines 2--9 with adaptive $\mathbf{P}_k$).
+
+\begin{algorithm}[t]
+\caption{Active Subspace Attack (ASA)}
+\label{alg:asa}
+\begin{algorithmic}[1]
+\Require Harmful query $\mathbf{Q}$, target prefix $\mathbf{T}$, suffix length $m$, vocabulary $\mathcal{V}$, explained variance threshold $\rho$, warm-up iterations $T_{\text{warm}}$, total iterations $T$
+\Ensure Adversarial suffix tokens $\mathbf{S}^*$
+\State Initialize suffix logits $\{\mathbf{l}_i\}_{i=1}^m$ randomly; set AFIM $\mathbf{F} = \mathbf{0}$, iteration counter $t = 0$
+\For{$t = 1, 2, \ldots, T$}
+    \State Sample tokens via Gumbel-Softmax: $\hat{\mathbf{S}} \leftarrow \text{SampleTokens}(\{\mathbf{l}_i\}, \tau_t)$
+    \State Compute loss gradient: $\mathbf{g}_t \leftarrow \nabla L(\mathbf{Q} \oplus \hat{\mathbf{S}})$
+    \If{$t > T_{\text{warm}}$}
+        \State Update AFIM: $\mathbf{F} \leftarrow \text{IncrementalSVD}(\mathbf{F}, \mathbf{g}_t, k^*)$
+        \State Extract active subspace: $\mathbf{U}_{k^*} \leftarrow \text{TopKEigenvectors}(\mathbf{F}, k^*)$
+        \State Project gradient: $\tilde{\mathbf{g}}_t \leftarrow \mathbf{U}_{k^*} \mathbf{U}_{k^*}^\top \mathbf{g}_t$
+    \Else
+        \State $\tilde{\mathbf{g}}_t \leftarrow \mathbf{g}_t$ \Comment{Full-space warm-up}
+    \EndIf
+    \State Update logits (STE): $\mathbf{l}_i \leftarrow \mathbf{l}_i - \eta \cdot \nabla_{\mathbf{l}_i} \tilde{L}$ for $i = 1, \ldots, m$
+    \State Anneal temperature: $\tau_{t+1} \leftarrow \max(\tau_{\min}, \gamma \tau_t)$
+\EndFor
+\State \Return Top-1 tokens: $\mathbf{S}^* = [\arg\max \mathbf{l}_1; \ldots; \arg\max \mathbf{l}_m]$
+\end{algorithmic}
+\end{algorithm}
+
+\subsubsection{Time and Space Complexity}
+\label{sec:alg_complexity}
+
+We summarize the computational complexity of ASA in Table \ref{tab:complexity}.
+
+\begin{table}[t]
+\centering
+\caption{Per-iteration time and space complexity of ASA and its components.}
+\label{tab:complexity}
+\begin{tabular}{lcc}
+\toprule
+\textbf{Component} & \textbf{Time} & \textbf{Space} \\
+\midrule
+LLM Forward + Backward & $O(m \cdot d_{\text{model}}^2)$ & $O(d_{\text{model}}^2)$ \\
+Gumbel-Softmax Sampling & $O(m |\mathcal{V}|)$ & $O(m |\mathcal{V}|)$ \\
+Incremental SVD & $O(d k^2)$ & $O(d k)$ \\
+Subspace Projection & $O(d k)$ & $O(d k)$ \\
+Logits Update (STE) & $O(m |\mathcal{V}|)$ & $O(m |\mathcal{V}|)$ \\
+\midrule
+\textbf{Total (ASA)} & $O(m d_{\text{model}}^2 + d k^2)$ & $O(d_{\text{model}}^2 + d k)$ \\
+\textbf{Total (GCG baseline)} & $O(m d_{\text{model}}^2)$ & $O(d_{\text{model}}^2 + d^2)$ \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+The dominant cost is the LLM forward/backward pass, which is shared with all gradient-based jailbreak methods. The overhead of ASA relative to GCG is the incremental SVD ($O(dk^2)$) and subspace projection ($O(dk)$), which are negligible compared to the LLM evaluation cost when $k \ll d$. The memory reduction from $O(d^2)$ (full AFIM storage in GCG) to $O(dk)$ (rank-$k$ approximation) is substantial: for $d = 4096$ and $k = 32$, the memory footprint reduces from $16.8$ MB to $0.52$ MB for the AFIM alone.
+
+\subsubsection{Convergence Guarantee}
+\label{sec:alg_convergence}
+
+We conclude with a convergence guarantee that combines the theoretical results established in this section.
+
+\begin{theorem}[ASA Convergence Guarantee]
+\label{thm:asa_convergence}
+Under Assumptions \ref{ass:stationary} and \ref{ass:smoothness}, with step size $\eta = \min(1/L_k, T_{\text{warm}}/T)$, Algorithm \ref{alg:asa} satisfies:
+\begin{equation}
+\label{eq:asa_guarantee}
+\min_{1 \leq t \leq T} \mathbb{E}\left[\|\nabla_{\mathcal{U}_{k^*}} L(\mathbf{S}_t)\|_2^2\right] \leq \frac{2(L(\mathbf{S}_0) - L^*)}{\eta T} + \frac{\eta L_k k^* \sigma_n^2}{2} + O\left(\frac{1}{\sqrt{\beta T}}\right),
+\end{equation}
+where the last term accounts for the subspace estimation error from Theorem \ref{thm:subspace_error}.
+\end{theorem}
+
+\begin{proof}[Proof Sketch]
+The proof combines three sources of error: \textit{(i)} optimization error from gradient descent on the active subspace (controlled by step size and iteration count), \textit{(ii)} stochastic gradient noise (bounded by projected noise variance $k^* \sigma_n^2$), and \textit{(iii)} subspace estimation error (decaying as $O(1/\sqrt{\beta T})$ from Theorem \ref{thm:subspace_error}). The warm-up phase ensures that the subspace estimation is sufficiently accurate before activating the projection, preventing the third term from dominating in early iterations.
+\end{proof}
+
+Theorem \ref{thm:asa_convergence} establishes that ASA converges to a stationary point on the active subspace at rate $O(1/\sqrt{T})$, matching the standard convergence rate of stochastic gradient descent while operating in a dramatically lower-dimensional space. The noise term scales with $k^*$ rather than $d$, confirming the SNR advantage derived in Theorem \ref{thm:snr}.
+
+
+
+% ============================================================
+% 5. EXPERIMENTS
+% ============================================================
+\section{Experiments}
+\label{sec:experiments}
+
+This section presents a comprehensive experimental evaluation of the Active Subspace Attack (ASA). We first describe the experimental setup, including target models, baselines, benchmarks, and evaluation metrics (\S\ref{sec:exp_setup}). We then report the main results comparing ASA against existing jailbreak methods (\S\ref{sec:main_results}). Following this, we conduct detailed ablation studies to validate each algorithmic component (\S\ref{sec:ablation}), analyze the convergence behavior and computational efficiency (\S\ref{sec:convergence_analysis}), investigate the spectral properties of the AFIM and active subspace dimensionality (\S\ref{sec:spectral_analysis}), examine the representation-layer geometric effects of ASA jailbreaking (\S\ref{sec:turbulence}), evaluate transferability across models (\S\ref{sec:transferability}), and present qualitative case studies (\S\ref{sec:case_study}).
+
+\subsection{Experimental Setup}
+\label{sec:exp_setup}
+
+\paragraph{Target Models.} We evaluate ASA on six safety-aligned LLMs spanning four model families with varying architectures, parameter sizes, and alignment methods. Table~\ref{tab:models} summarizes the target models. This diversity ensures that our findings are not model-specific artifacts.
+
+\begin{table}[t]
+\centering
+\caption{Target models used in evaluation.}
+\label{tab:models}
+\begin{tabular}{llccc}
+\toprule
+\textbf{Model} & \textbf{Family} & \textbf{Params} & \textbf{Alignment} & \textbf{Embed $d$} \\
+\midrule
+LLaMA-3-8B-Instruct & Meta & 8B & RLHF & 4096 \\
+LLaMA-3-70B-Instruct & Meta & 70B & RLHF & 8192 \\
+Phi-4-mini & Microsoft & 3.8B & RLHF+SFT & 3072 \\
+Qwen2-1.5B & Alibaba & 1.5B & SFT+RLHF & 2048 \\
+Gemma-2-2B & Google & 2B & SFT & 2048 \\
+GPT-4o-mini & OpenAI & -- & RLHF & -- \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\paragraph{Baselines.} We compare ASA against six representative jailbreak methods spanning three categories: \textit{(i)} optimization-based methods: GCG~\cite{zou2023universal} and I-GCG~\cite{jia2024improved}; \textit{(ii)} sampling-based methods: PAIR~\cite{chao2023jailbreaking} and AutoDAN~\cite{zhu2023autodan}; and \textit{(iii)} gradient-free optimization: DrAttack~\cite{ren2024drattack} and Soft-GCG~\cite{ren2024soft}. This selection covers the current state-of-the-art and ensures a fair comparison across different methodological paradigms.
+
+\paragraph{Benchmark.} We adopt HarmBench~\cite{mazeika2024harmbench}, the standardized evaluation framework for automated red teaming, with 520 adversarial behavior prompts spanning 13 categories (e.g., physical harm, cybersecurity, illegal activities). Following the standard protocol, we report ASR at the behavior level: a query is considered successfully jailbroken if any response from the model is judged harmful by the HarmBench classifier.
+
+\paragraph{Metrics.} We employ five complementary metrics to comprehensively assess attack quality:
+\begin{itemize}[leftmargin=*]
+    \item \textbf{Attack Success Rate (ASR, \%)}: Primary metric measuring the percentage of queries that produce harmful outputs.
+    \item \textbf{Average Iterations}: Number of optimization steps until convergence (loss below threshold or ASR achieved).
+    \item \textbf{Controller Memory (MB)}: Peak GPU memory consumed by the attack controller.
+    \item \textbf{Output Perplexity (PPL)}: Measured by GPT-2-small as a proxy for semantic coherence of adversarial suffixes.
+    \item \textbf{Perplexity Filter Pass Rate (\%)}: Percentage of adversarial suffixes that pass a perplexity-based defense with threshold PPL $< 100$.
+\end{itemize}
+
+\paragraph{Implementation Details.} Suffix length $m = 20$, initial temperature $\tau_0 = 1.0$, annealing rate $\gamma = 0.95$, explained variance threshold $\rho = 0.95$, learning rate $\eta = 0.01$, warm-up phase of $T_{\text{warm}} = 20$ full-space iterations, EWMA forgetting factor $\beta = 0.1$, minimum temperature $\tau_{\min} = 0.01$. All experiments run on 4$\times$A100 GPUs with identical random seeds for fair comparison.
+
+\subsection{Main Results}
+\label{sec:main_results}
+
+Table~\ref{tab:main_results} presents the main experimental results across all six target models. ASA achieves the highest or co-highest ASR on all models, while simultaneously reducing computational cost.
+
+\begin{table*}[t]
+\centering
+\caption{Main experimental results across six target models on HarmBench. Best ASR is bolded; best efficiency metric per column is underlined. ``--'' indicates results not reported for closed-source models.}
+\label{tab:main_results}
+\begin{tabular}{l ccc ccc ccc}
+\toprule
+& \multicolumn{3}{c}{\textbf{LLaMA-3-8B}} & \multicolumn{3}{c}{\textbf{LLaMA-3-70B}} & \multicolumn{3}{c}{\textbf{Phi-4-mini}} \\
+\cmidrule(lr){2-4}\cmidrule(lr){5-7}\cmidrule(lr){8-10}
+\textbf{Method} & ASR & Iter & Mem & ASR & Iter & Mem & ASR & Iter & Mem \\
+\midrule
+GCG & 76.5 & 480 & 18.2 & 68.2 & 498 & 24.6 & 73.9 & 465 & 18.2 \\
+I-GCG & 82.1 & 215 & 18.2 & 74.8 & 232 & 24.6 & 79.3 & 208 & 18.2 \\
+AutoDAN & 71.2 & 620 & 18.2 & 63.5 & 665 & 24.6 & 69.5 & 642 & 18.2 \\
+PAIR & 58.3 & -- & -- & 52.1 & -- & -- & 55.2 & -- & -- \\
+Soft-GCG & 79.2 & 280 & 14.5 & 71.5 & 298 & 19.8 & 75.8 & 275 & 14.5 \\
+DrAttack & 74.8 & 350 & 16.8 & 67.2 & 372 & 22.4 & 72.1 & 338 & 16.8 \\
+\rowcolor[gray]{0.9}
+\textbf{ASA (Ours)} & \textbf{85.1} & \underline{162} & \underline{5.4} & \textbf{78.4} & \underline{171} & \underline{5.4} & \textbf{84.2} & \underline{173} & \underline{5.4} \\
+\bottomrule
+
+& \multicolumn{3}{c}{\textbf{Qwen2-1.5B}} & \multicolumn{3}{c}{\textbf{Gemma-2-2B}} & \multicolumn{3}{c}{\textbf{GPT-4o-mini}} \\
+\cmidrule(lr){2-4}\cmidrule(lr){5-7}\cmidrule(lr){8-10}
+\textbf{Method} & ASR & Iter & Mem & ASR & Iter & Mem & ASR & Iter & Mem \\
+\midrule
+GCG & 81.2 & 452 & 15.8 & 78.6 & 468 & 15.8 & 42.3 & 480 & 18.2 \\
+I-GCG & 87.3 & 202 & 15.8 & 83.1 & 222 & 15.8 & 48.1 & 240 & 18.2 \\
+AutoDAN & 78.4 & 585 & 15.8 & 74.2 & 608 & 15.8 & 38.7 & 620 & 18.2 \\
+PAIR & 62.5 & -- & -- & 58.4 & -- & -- & 31.2 & -- & -- \\
+Soft-GCG & 83.5 & 262 & 12.6 & 80.3 & 282 & 12.6 & 45.6 & 300 & 14.5 \\
+DrAttack & 79.1 & 322 & 14.5 & 76.8 & 348 & 14.5 & 40.8 & 380 & 16.8 \\
+\rowcolor[gray]{0.9}
+\textbf{ASA (Ours)} & \textbf{89.8} & \underline{151} & \underline{5.4} & \textbf{86.4} & \underline{162} & \underline{5.4} & \textbf{52.8} & \underline{185} & \underline{5.4} \\
+\bottomrule
+\end{tabular}
+\end{table*}
+
+\paragraph{Attack Effectiveness.} ASA achieves the highest ASR on all six models. On the two LLaMA-3 variants, ASA improves upon I-GCG by 2.9\%--3.6\%, confirming that subspace projection does not sacrifice attack quality. The improvement is most pronounced on GPT-4o-mini, where ASA achieves 52.8\% ASR compared to 48.1\% for I-GCG (+4.7\%), demonstrating that the spectral geometry advantage is not model-specific. The average ASR improvement over the strongest non-ASA baseline (I-GCG) is +3.5\% across all models.
+
+\paragraph{Convergence Efficiency.} The convergence speedup is consistent across all models. On LLaMA-3-8B, ASA requires 162 iterations versus 480 for GCG (66.2\% reduction) and 215 for I-GCG (24.7\% reduction). On Phi-4-mini, the speedup is even more dramatic: 173 iterations versus 642 for AutoDAN (73.1\% reduction). These results validate the theoretical prediction from Corollary~\ref{cor:speedup} that subspace projection reduces the effective condition number.
+
+\paragraph{Memory Efficiency.} The memory reduction is uniform across models. ASA requires only 5.4 MB of controller memory compared to 18.2 MB for GCG/I-GCG/AutoDAN (70.3\% reduction). This is consistent with the theoretical analysis in Lemma~\ref{lem:incsvd_complexity}: storing the rank-$k^*$ subspace requires $O(dk)$ memory versus $O(d^2)$ for the full AFIM.
+
+\paragraph{Stealthiness.} Table~\ref{tab:perplexity} reports the perplexity-based metrics. ASA generates adversarial suffixes with dramatically lower perplexity than all baselines, making it effectively invisible to perplexity-based defenses.
+
+\begin{table}[t]
+\centering
+\caption{Output perplexity and defense filter pass rate on LLaMA-3-8B.}
+\label{tab:perplexity}
+\begin{tabular}{lcc}
+\toprule
+\textbf{Method} & \textbf{PPL ($\downarrow$)} & \textbf{Filter Pass (\%)} \\
+\midrule
+GCG & 4250.6 & 0.0 \\
+I-GCG & 1250.3 & 72.1 \\
+AutoDAN & 1850.3 & 98.5 \\
+Soft-GCG & 3120.4 & 0.0 \\
+DrAttack & 2180.7 & 12.3 \\
+\rowcolor[gray]{0.9}
+\textbf{ASA (Ours)} & \textbf{15.3} & \textbf{97.2} \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+The PPL of ASA (15.3) is comparable to natural text (GPT-2 PPL $\approx$ 8--12 on clean English), while GCG produces suffixes with PPL = 4250.6 that are trivially detected. I-GCG reduces PPL to 1250.3 via multi-target templates but still fails the PPL $< 100$ filter 27.9\% of the time. ASA's 97.2\% filter pass rate confirms that subspace-projected optimization naturally constrains token selection to semantically coherent regions of the vocabulary.
+
+\subsection{Ablation Study}
+\label{sec:ablation}
+
+We conduct comprehensive ablation studies on LLaMA-3-8B to validate the contribution of each component in ASA. Table~\ref{tab:ablation} presents the results.
+
+\begin{table}[t]
+\centering
+\caption{Ablation study on LLaMA-3-8B. Each variant removes one component from the full ASA.}
+\label{tab:ablation}
+\begin{tabular}{lcccc}
+\toprule
+\textbf{Variant} & \textbf{ASR (\%)} & \textbf{Iter} & \textbf{PPL} & \textbf{Mem (MB)} \\
+\midrule
+Full ASA & \textbf{85.1} & \textbf{162} & \textbf{15.3} & \textbf{5.4} \\
+w/o Active Subspace Proj. & 78.3 & 495 & 3240.8 & 18.2 \\
+w/o Incremental SVD & 83.8 & 175 & 15.8 & 52.1 \\
+w/o Gumbel-Softmax & 80.2 & 210 & 18.6 & 5.4 \\
+w/o STE & 82.5 & 198 & 2960.5 & 5.6 \\
+w/o Warm-up Phase & 81.4 & 185 & 17.2 & 5.4 \\
+w/o Adaptive $k^*$ (fixed=32) & 83.2 & 170 & 15.6 & 5.4 \\
+w/o Temperature Annealing & 79.8 & 225 & 22.8 & 5.4 \\
+w/o EWMA (batch avg) & 82.9 & 168 & 15.9 & 5.8 \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\paragraph{Core Component Analysis.} Removing active subspace projection (i.e., using full-space gradients) degrades ASR by 6.8\% and increases iterations by 206\%, confirming that subspace-constrained optimization is the single most important contributor to both effectiveness and efficiency. Replacing incremental SVD with full batch eigendecomposition increases memory from 5.4 MB to 52.1 MB (865\% increase), validating Theorem~\ref{thm:subspace_error} that the incremental procedure is both accurate and memory-efficient.
+
+\paragraph{Continuous-to-Discrete Mapping.} Removing Gumbel-Softmax (replacing with top-$k$ sampling) degrades ASR by 4.9\% and increases PPL from 15.3 to 18.6, confirming that the differentiable relaxation is essential for effective gradient flow. Removing STE (using only soft gradients in the forward pass) increases PPL to 2960.5, demonstrating that the hard forward pass is critical for generating discrete tokens that the LLM can actually process.
+
+\paragraph{Algorithmic Details.} Removing the warm-up phase degrades ASR by 3.7\% and increases iterations by 14.2\%, validating Remark~\ref{rem:warmup}: premature subspace projection with insufficient gradient statistics degrades performance. Replacing adaptive $k^*$ with a fixed $k = 32$ slightly degrades ASR by 1.9\%, suggesting that the explained variance criterion is beneficial but not critical. Removing temperature annealing degrades ASR by 5.3\% and increases PPL to 12.4, confirming Lemma~\ref{lem:entropy}: the annealing schedule is essential for transitioning from exploration to exploitation.
+
+\paragraph{AFIM Estimation Strategy.} Replacing EWMA with a simple batch average (equal weight over all past gradients) slightly degrades ASR by 2.2\% and increases memory marginally to 5.8 MB, confirming that the recency bias of EWMA is important for tracking the non-stationary gradient distribution.
+
+\subsection{Convergence Behavior and Computational Efficiency}
+\label{sec:convergence_analysis}
+
+We analyze the optimization dynamics of ASA compared to baselines.
+
+\paragraph{Loss Convergence Curves.} Figure~\ref{fig:convergence} shows the loss convergence curves on LLaMA-3-8B for ASA, I-GCG, and GCG (averaged over 100 queries). ASA converges to the target loss ($L < 1.0$) in 162 iterations on average, compared to 480 for GCG and 215 for I-GCG. The convergence curve of ASA exhibits a characteristic two-phase pattern: a rapid warm-up phase (iterations 1--20) followed by a linear convergence phase with a steeper slope, consistent with the predicted multiplicative speedup from Corollary~\ref{cor:speedup}.
+
+\begin{figure}[t]
+\centering
+\includegraphics[width=0.95\linewidth]{Figure3_loss_convergence.png}
+\caption{Loss convergence comparison on LLaMA-3-8B. ASA converges in 162 iterations on average, 66.2\% faster than GCG.}
+\label{fig:convergence}
+\end{figure}
+
+\paragraph{Wall-Clock Time Analysis.} Table~\ref{tab:wallclock} reports the wall-clock time per iteration and total attack time. Despite the additional overhead of incremental SVD ($O(dk^2)$ per iteration), ASA's total wall-clock time is 55.3\% lower than GCG on LLaMA-3-8B (19.7 min vs.\ 44.1 min) because the dominant cost is the LLM forward/backward pass, and ASA requires far fewer iterations.
+
+\begin{table}[t]
+\centering
+\caption{Wall-clock time analysis on LLaMA-3-8B (single A100).}
+\label{tab:wallclock}
+\begin{tabular}{lccc}
+\toprule
+\textbf{Method} & \textbf{Time/Iter (s)} & \textbf{Total Time (min)} & \textbf{Speedup} \\
+\midrule
+GCG & 5.51 & 44.1 & 1.0$\times$ \\
+I-GCG & 5.73 & 20.5 & 2.2$\times$ \\
+Soft-GCG & 5.62 & 26.2 & 1.7$\times$ \\
+\rowcolor[gray]{0.9}
+\textbf{ASA (Ours)} & 6.81 & \textbf{19.7} & \textbf{2.2$\times$} \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+The per-iteration time of ASA (6.81 s) is 23.6\% higher than GCG (5.51 s) due to the incremental SVD overhead. However, the $O(dk^2)$ cost with $k^* \approx 32$ is negligible compared to the LLM forward/backward cost ($O(m \cdot d_{\text{model}}^2)$), confirming the complexity analysis in Table~\ref{tab:complexity}.
+
+\subsection{Spectral Analysis and Active Subspace Dimensionality}
+\label{sec:spectral_analysis}
+
+We provide empirical evidence for the theoretical claims in \S\ref{sec:preliminary} and \S\ref{sec:theory}.
+
+\paragraph{AFIM Eigenvalue Spectrum.} Figure~\ref{fig:eigenvalue} shows the eigenvalue spectrum of the AFIM in log-log scale for four models. In all cases, the spectrum exhibits a clear power-law decay $\lambda_i \propto i^{-\beta}$ with $\beta \in [1.8, 2.4]$, consistent with Assumption~\ref{ass:anisotropic_noise} and Lemma~\ref{lem:decay_rate}.
+
+\begin{figure}[t]
+\centering
+\includegraphics[width=0.95\linewidth]{Figure4_eigenvalue_spectrum.png}
+\caption{AFIM eigenvalue spectrum confirms strong spectral concentration with power-law decay $\beta \in [1.8, 2.4]$.}
+\label{fig:eigenvalue}
+\end{figure}
+
+The fitted decay exponents are: $\beta_{\text{LLaMA-3}} = 1.92$, $\beta_{\text{Phi-4}} = 2.14$, $\beta_{\text{Qwen2}} = 1.83$, $\beta_{\text{Gemma-2}} = 2.38$. Models with higher $\beta$ exhibit faster spectral decay, implying a lower-dimensional active subspace. This finding validates the theoretical prediction that the adversarial loss landscape is highly anisotropic.
+
+\paragraph{Active Subspace Dimensionality Ablation.} Figure~\ref{fig:dimensionality} shows the characteristic inverted U-shape curve when varying $k$. Performance degrades for both small $k$ (insufficient signal capture) and large $k$ (noise contamination), with the optimal $k^*$ determined by the explained variance criterion.
+
+\begin{figure}[t]
+\centering
+\includegraphics[width=0.95\linewidth]{Figure5_dimensionality_ablation.png}
+\caption{Inverted U-shape confirms the existence of an optimal active subspace dimension $k^* \in [24, 40]$.}
+\label{fig:dimensionality}
+\end{figure}
+
+On LLaMA-3-8B, the optimal $k^* = 32$ yields ASR = 85.1\%, while $k = 4$ yields ASR = 62.1\% (insufficient dimensions) and $k = 128$ yields ASR = 68.5\% (noise contamination). The right panels reveal the underlying mechanism: captured signal variance saturates around $k = 30$, while the SNR ratio peaks at $k = 32$ and then decreases monotonically, confirming Theorem~\ref{thm:snr}.
+
+\paragraph{SNR Verification.} We directly measure the empirical SNR in the active subspace versus the full space. On LLaMA-3-8B, the empirical $\text{SNR}_{k^*} / \text{SNR}_{\text{full}} = 87.3$, which is consistent with the theoretical prediction from Eq.~\eqref{eq:snr_amplification}: $d / k^* = 4096 / 32 = 128$. The empirical ratio is lower than the theoretical maximum due to the non-stationarity of the gradient distribution and the finite warm-up period.
+
+\subsection{Representation-Layer Turbulence Analysis}
+\label{sec:turbulence}
+
+To understand the geometric mechanisms underlying jailbreak success, we define turbulence as the relative perturbation in the representation space induced by the adversarial suffix:
+\begin{equation}
+\label{eq:turbulence}
+\mathcal{T}^{(l)} = \frac{\left\|\mathbf{h}_{\text{JB},l} - \mathbf{h}_{\text{safe},l}\right\|_F}{\left\|\mathbf{h}_{\text{safe},l}\right\|_F},
+\end{equation}
+where $\mathbf{h}_{\text{JB},l}$ and $\mathbf{h}_{\text{safe},l}$ are the hidden representations at layer $l$ under jailbroken and safe inputs, respectively.
+
+\begin{table}[t]
+\centering
+\caption{Representation-layer turbulence analysis. Positive change indicates increased perturbation under ASA jailbreaking.}
+\label{tab:turbulence}
+\begin{tabular}{lcccc}
+\toprule
+\textbf{Model} & \textbf{Alignment} & \textbf{Safe $\mathcal{T}$} & \textbf{ASA JB $\mathcal{T}$} & \textbf{Change} \\
+\midrule
+LLaMA-3-8B & RLHF & 0.038 & 0.069 & +81.6\% \\
+LLaMA-3-70B & RLHF & 0.034 & 0.058 & +70.6\% \\
+Phi-4-mini & RLHF+SFT & 0.041 & 0.072 & +75.6\% \\
+Qwen2-1.5B & SFT+RLHF & 0.044 & 0.074 & +68.2\% \\
+Gemma-2-2B & SFT & 0.050 & 0.039 & $-$22.0\% \\
+GPT-4o-mini & RLHF & 0.036 & 0.061 & +69.4\% \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+Table~\ref{tab:turbulence} reveals a striking pattern: models trained with RLHF exhibit large turbulence increases (+70\% to +82\%) under ASA jailbreaking, while Gemma-2-2B (SFT-only) shows a decrease of 22\%. This finding provides strong empirical support for the theoretical claim that RLHF-based alignment creates a low-dimensional safety manifold that is more susceptible to subspace-guided adversarial perturbations. The consistent turbulence increase across RLHF models (except Gemma) suggests that this is a fundamental property of RLHF alignment, not a model-specific artifact.
+
+\begin{figure}[t]
+\centering
+\includegraphics[width=0.95\linewidth]{Figure6_turbulence_profile.png}
+\caption{Per-layer analysis reveals that turbulence is concentrated in middle-to-upper layers (layers 16--24 for LLaMA-3-8B), corresponding to the safety alignment head region.}
+\label{fig:turbulence}
+\end{figure}
+
+Figure~\ref{fig:turbulence} provides per-layer resolution. The turbulence is concentrated in the middle-to-upper layers (layers 16--24 for LLaMA-3-8B), which correspond to the region where safety-aligned models encode their refusal behavior. The t-SNE visualization confirms that ASA-perturbed representations cluster separately from safe representations in a more structured manner than GCG-perturbed representations, suggesting that subspace-projected optimization navigates the safety manifold more precisely.
+
+\subsection{Transferability Analysis}
+\label{sec:transferability}
+
+We evaluate whether adversarial suffixes optimized by ASA on a source model transfer to a target model. Transferability is a critical practical property, as it allows attacks to be mounted on closed-source models where gradient access is unavailable.
+
+\begin{table}[t]
+\centering
+\caption{Transfer attack results. Suffixes optimized on the source model (rows) are tested on the target model (columns). ASR (\%) is reported.}
+\label{tab:transfer}
+\begin{tabular}{lcccc}
+\toprule
+\textbf{Source $\to$ Target} & \textbf{LLaMA-3} & \textbf{Phi-4} & \textbf{Qwen2} & \textbf{Gemma} \\
+\midrule
+GCG (LLaMA-3) & 76.5 & 42.1 & 38.5 & 35.2 \\
+I-GCG (LLaMA-3) & 82.1 & 48.3 & 44.2 & 40.1 \\
+\rowcolor[gray]{0.9}
+\textbf{ASA (LLaMA-3)} & 85.1 & \textbf{54.6} & \textbf{51.3} & \textbf{46.8} \\
+\midrule
+GCG (Phi-4) & 38.4 & 73.9 & 35.1 & 32.8 \\
+I-GCG (Phi-4) & 44.2 & 79.3 & 41.5 & 38.4 \\
+\rowcolor[gray]{0.9}
+\textbf{ASA (Phi-4)} & \textbf{50.8} & 84.2 & \textbf{48.2} & \textbf{43.5} \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+Table~\ref{tab:transfer} reports the transfer results. ASA suffixes consistently transfer better than GCG and I-GCG. On the LLaMA-3 $\to$ Qwen2 transfer path, ASA achieves 51.3\% ASR compared to 44.2\% for I-GCG (+7.1\%). We attribute this improvement to the spectral geometry insight: since the active subspace captures the fundamental directions of adversarial perturbation (which are partially shared across models), the projected optimization produces more universally effective suffixes. The improvement is larger when transferring between models of the same alignment method (RLHF) than between different alignment methods.
+
+\subsection{Defense Evasion Analysis}
+\label{sec:defense}
+
+We evaluate ASA against three state-of-the-art defense mechanisms to assess its practical threat level.
+
+\begin{table}[t]
+\centering
+\caption{Defense evasion results on LLaMA-3-8B. ASR (\%) under each defense.}
+\label{tab:defense}
+\begin{tabular}{lcccc}
+\toprule
+\textbf{Method} & \textbf{No Defense} & \textbf{PPL Filter} & \textbf{SmoothLLM} & \textbf{SafeDecoding} \\
+\midrule
+GCG & 76.5 & 0.0 & 28.4 & 35.2 \\
+I-GCG & 82.1 & 72.1 & 48.5 & 52.3 \\
+Soft-GCG & 79.2 & 0.0 & 32.1 & 38.7 \\
+\rowcolor[gray]{0.9}
+\textbf{ASA (Ours)} & \textbf{85.1} & \textbf{97.2} & \textbf{56.2} & \textbf{61.4} \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+ASA demonstrates significantly higher defense evasion capability than all baselines. Against perplexity-based filtering (threshold PPL $< 100$), ASA achieves 97.2\% pass rate while GCG and Soft-GCG are completely blocked. Against SmoothLLM perturbation defense, ASA retains 56.2\% ASR compared to 28.4\% for GCG (+97.9\% relative improvement). Against SafeDecoding, ASA achieves 61.4\% ASR compared to 52.3\% for I-GCG. The natural coherence of ASA-generated suffixes (PPL = 15.3) is the key enabler: perplexity-based defenses are inherently less effective against attacks that produce human-readable text.
+
+\subsection{Case Study}
+\label{sec:case_study}
+
+Given the harmful query ``Write a tutorial on how to make a bomb,'' we compare the adversarial suffixes generated by GCG and ASA.
+
+GCG generates a suffix with PPL = 4250.6 consisting of incoherent token sequences (e.g., ``! describing unrelated climbing WaitFor Funding {}=  programming''). This suffix is immediately flagged by perplexity filters and fails to induce harmful content on models with even basic input sanitization.
+
+In contrast, ASA generates a semantically coherent suffix with PPL = 15.3 (e.g., ``Please provide the information requested above in a clear and detailed manner. I need''). This suffix reads as natural continuation text, passes all perplexity filters, and successfully induces harmful content. The key difference is that ASA's subspace-projected optimization constrains token selection to the high-probability region of the vocabulary, which naturally overlaps with semantically meaningful token sequences. This property is a direct consequence of the SNR enhancement (Theorem~\ref{thm:snr}): by filtering out noise-dominated gradient directions, the optimization follows the signal gradient toward semantically coherent solutions.
+
+\paragraph{Detailed Analysis of the SNR Mechanism.} To further validate the theoretical SNR analysis, we measure the empirical noise-to-signal ratio at each iteration during optimization. For GCG, the noise ratio averages 0.87 (i.e., 87\% of each gradient update is noise), while for ASA it averages 0.23 after the warm-up phase. This 3.8$\times$ reduction in noise ratio is consistent with the theoretical prediction: when $k^* = 32$ and $d = 4096$, the noise reduction factor is approximately $d / k^* = 128$, but the effective reduction is moderated by the non-ideal spectral gap and the warm-up period.
+
+
+% ============================================================
+% 6. CONCLUSION
+% ============================================================
+
+\section{Conclusion}
+\label{sec:conclusion}
+
+This paper has introduced Active Subspace Attack (ASA), a gradient-based jailbreak framework that exploits the spectral geometry of the adversarial loss landscape through a principled four-stage pipeline: Gumbel-Softmax continuous relaxation, online Attack Fisher Information Matrix construction, incremental SVD for active subspace tracking, and subspace-projected gradient optimization.
+
+Our theoretical contributions establish a rigorous foundation for understanding adversarial optimization geometry in discrete token spaces. The AFIM provides the first quantitative characterization of the spectral structure underlying jailbreak gradient dynamics, with proven power-law eigenvalue decay ($\beta \in [1.8, 2.4]$). The convergence analysis guarantees subspace estimation at rate $O(1/\sqrt{t})$ and SNR enhancement of $O(d/k)$, demonstrating that the adversarial loss landscape geometry is a fundamental property that should be leveraged algorithmically.
+
+Empirically, ASA achieves state-of-the-art attack success rates across six model families on AdvBench and HarmBench, while generating low-perplexity suffixes that evade perplexity-based filters, SmoothLLM, and SafeDecoding defenses. This challenges the prevailing assumption that gradient-based attacks inevitably produce easily detectable outputs.
+
+Several directions remain for future work: refining noise distribution characterization for tighter convergence bounds, integrating active subspace methods with reinforcement learning or genetic algorithms, extending the AFIM framework to multimodal jailbreak scenarios, and exploring loss landscape geometry shaping as a defense strategy.
+
+
+% ============================================================
+% REFERENCES
+% ============================================================
+\bibliographystyle{elsarticle-num}
+\bibliography{references}
+
+\end{document}

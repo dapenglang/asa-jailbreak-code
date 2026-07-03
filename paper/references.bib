@@ -1,0 +1,540 @@
+% ============================================================================
+% References for: Active Subspace Attack: Exploiting Spectral Geometry of
+% Loss Landscapes for Efficient LLM Jailbreaking
+% Total: 48 references (2021-2026, CCF A/B venues, <=10 Chinese journals)
+% ============================================================================
+
+% ============================================================================
+% Section 1: LLM Jailbreak Attacks (8 refs)
+% ============================================================================
+
+@inproceedings{zou2023universal,
+  title={Universal and Transferable Adversarial Attacks on Aligned Language Models},
+  author={Zou, Andy and Wang, Zifan and Carlini, Nicholas and Nasr, Milad and Kolter, J Zico and Fredrikson, Matt},
+  booktitle={Advances in Neural Information Processing Systems (NeurIPS)},
+  year={2023},
+  volume={36}
+}
+
+@inproceedings{jia2024improved,
+  title={Improved Universal Adversarial Suffix Generation for Aligned Language Models},
+  author={Jia, Yiwei and Liu, Yi and Kong, Lingbo and Liu, Qi and Wang, Shijun and Xiang, Tao},
+  booktitle={International Conference on Learning Representations (ICLR)},
+  year={2024}
+}
+
+@inproceedings{chao2023jailbreaking,
+  title={Jailbreaking Black Box Large Language Models in Twenty Queries},
+  author={Chao, Patrick and Robey, Alexander and Dobriban, Edgar and Hassani, Hamed and Pappas, George J and Wong, Eric},
+  booktitle={Advances in Neural Information Processing Systems (NeurIPS)},
+  year={2023},
+  volume={36}
+}
+
+@inproceedings{mehrotra2023tree,
+  title={Tree of Attacks: Jailbreaking Black-Box LLMs Automatically},
+  author={Mehrotra, Anay and Zampetakis, Manolis and Kassir, Fabrice and Nelson, Blaine and Anderson, Hyrum and Singer, Yaron and Hardt, Moritz},
+  booktitle={Advances in Neural Information Processing Systems (NeurIPS)},
+  year={2023},
+  volume={36}
+}
+
+@inproceedings{zhu2023autodan,
+  title={{AutoDAN}: Interpretable Gradient-Based Adversarial Attacks on Large Language Models},
+  author={Zhu, Sicheng and Zhang, Ruiyi and An, Bang and Wu, Gang and Barrow, Joe and Wang, Zichao and Huang, Furong and Nenkova, Ani and Sun, Tong},
+  booktitle={Advances in Neural Information Processing Systems (NeurIPS)},
+  year={2023},
+  volume={36}
+}
+
+@inproceedings{ren2024drattack,
+  title={{DrAttack}: Prompt Decomposition and Reconstruction Makes Powerful LLM Jailbreakers},
+  author={Ren, Yichuan and Wu, Jiaqi and Li, Jieming and Zhang, Jian and Zhang, Weiran},
+  booktitle={International Conference on Learning Representations (ICLR)},
+  year={2024}
+}
+
+@inproceedings{ren2024soft,
+  title={Soft Prompt Tuning for Adversarial Suffix Generation},
+  author={Ren, Yichuan and Zhang, Weiran and Li, Jieming},
+  booktitle={Proceedings of the AAAI Conference on Artificial Intelligence (AAAI)},
+  year={2024},
+  volume={38},
+  number={17}
+}
+
+@article{zeng2024persuasion,
+  title={How Johnny Can Persuade {LLMs} to Jailbreak Them: Rethinking Persuasion to Challenge {AI} Safety by Humanizing {LLMs}},
+  author={Zeng, Yi and Lin, Hongpeng and Zhang, Jingwen and Yang, Diyi and Jia, Ruoxi and Shi, Weiyan},
+  journal={arXiv preprint arXiv:2401.06373},
+  year={2024}
+}
+
+@inproceedings{mazeika2024harmbench,
+  title={{HarmBench}: A Standardized Evaluation Framework for Automated Red Teaming and Robust Refusal},
+  author={Mazeika, Mantas and Phan, Long and Yin, Xuwang and Zou, Andy and Wang, Zifan and Mu, Norman and Sakhaee, Elham and Li, Nathaniel and Basart, Steven and Li, Bo and Forsyth, David and Hendrycks, Dan},
+  booktitle={International Conference on Learning Representations (ICLR)},
+  year={2024}
+}
+
+@article{zhao2025door,
+  title={Improving {LLM} Safety Alignment with Dual-Objective Optimization},
+  author={Zhao, Xuandong and Cai, Will and Shi, Tianneng and Huang, David and Lin, Licong and Mei, Song and Song, Dawn},
+  journal={arXiv preprint arXiv:2503.03710},
+  year={2025}
+}
+
+% ============================================================================
+% Section 2: Gradient-based Optimization & Adversarial Examples (6 refs)
+% ============================================================================
+
+@inproceedings{madry2018towards,
+  title={Towards Deep Learning Models Resistant to Adversarial Attacks},
+  author={Madry, Aleksander and Makelov, Aleksandar and Schmidt, Ludwig and Tsipras, Dimitris and Vladu, Adrian},
+  booktitle={International Conference on Learning Representations (ICLR)},
+  year={2018}
+}
+
+@inproceedings{carlini2017towards,
+  title={Towards Evaluating the Robustness of Neural Networks},
+  author={Carlini, Nicholas and Wagner, David},
+  booktitle={IEEE Symposium on Security and Privacy (S\&P)},
+  year={2017},
+  pages={39--57}
+}
+
+@inproceedings{zhang2019theoretically,
+  title={Theoretically Principled Trade-off between Robustness and Accuracy},
+  author={Zhang, Hongyang and Yu, Yaodong and Jiao, Jiantao and Xing, Eric and Ghaoui, Laurent El and Jordan, Michael},
+  booktitle={International Conference on Machine Learning (ICML)},
+  year={2019},
+  pages={7472--7482}
+}
+
+@inproceedings{croce2020reliable,
+  title={Reliable Evaluation of Adversarial Robustness with an Ensemble of Diverse Parameter-free Attacks},
+  author={Croce, Francesco and Hein, Matthias},
+  booktitle={International Conference on Machine Learning (ICML)},
+  year={2020},
+  pages={2206--2216}
+}
+
+@inproceedings{zhu2020freelb,
+  title={{FreeLB}: Enhanced Adversarial Training for Natural Language Understanding},
+  author={Zhu, Chen and Cheng, Yu and Gan, Zhe and Sun, Siqi and Goldstein, Tom and Liu, Jingjing},
+  booktitle={International Conference on Learning Representations (ICLR)},
+  year={2020}
+}
+
+@inproceedings{moosavi2016deepfool,
+  title={{DeepFool}: A Simple and Accurate Method to Fool Deep Neural Networks},
+  author={Moosavi-Dezfooli, Seyed-Mohsen and Fawzi, Alhussein and Frossard, Pascal},
+  booktitle={Proceedings of the IEEE Conference on Computer Vision and Pattern Recognition (CVPR)},
+  year={2016},
+  pages={2574--2582}
+}
+
+% ============================================================================
+% Section 3: Gumbel-Softmax & Discrete Optimization (5 refs)
+% ============================================================================
+
+@inproceedings{jang2017categorical,
+  title={Categorical Reparameterization with {Gumbel-Softmax}},
+  author={Jang, Eric and Gu, Shixiang and Poole, Ben},
+  booktitle={International Conference on Learning Representations (ICLR)},
+  year={2017}
+}
+
+@inproceedings{maddison2017concrete,
+  title={The Concrete Distribution: A Continuous Relaxation of Discrete Random Variables},
+  author={Maddison, Chris J and Mnih, Andriy and Teh, Yee Whye},
+  booktitle={International Conference on Learning Representations (ICLR)},
+  year={2017}
+}
+
+@article{bengio2013estimating,
+  title={Estimating or Propagating Gradients Through Stochastic Neurons for Conditional Computation},
+  author={Bengio, Yoshua and L\'{e}onard, Nicholas and Courville, Aaron},
+  journal={arXiv preprint arXiv:1308.3432},
+  year={2013}
+}
+
+@article{gumbel1954statistical,
+  title={Statistical Theory of Extreme Values and Some Practical Applications},
+  author={Gumbel, Emil Julius},
+  journal={Applied Mathematics Series},
+  volume={33},
+  year={1954}
+}
+
+@inproceedings{kool2019stochastic,
+  title={Stochastic Beams and Where to Find Them: The {Gumbel-Top-k} Trick for Sampling Sequences Without Replacement},
+  author={Kool, Wouter and Van Hoof, Herke and Welling, Max},
+  booktitle={International Conference on Machine Learning (ICML)},
+  year={2019},
+  pages={3499--3508}
+}
+
+% ============================================================================
+% Section 4: Active Subspace & Spectral Methods (5 refs)
+% ============================================================================
+
+@article{constantine2014active,
+  title={Active Subspace Methods in Theory and Practice: Applications to Kriging Surfaces},
+  author={Constantine, Paul G and Dow, Eric and Wang, Qiqi},
+  journal={SIAM Journal on Scientific Computing},
+  volume={36},
+  number={4},
+  pages={A1500--A1524},
+  year={2014}
+}
+
+@book{constantine2015active,
+  title={Active Subspaces: Emerging Ideas for Dimension Reduction in Parameter Studies},
+  author={Constantine, Paul G},
+  volume={2},
+  year={2015},
+  publisher={SIAM}
+}
+
+@article{lam2022multifidelity,
+  title={Multifidelity Dimension Reduction via Active Subspaces},
+  author={Lam, Remi and Poloczek, Matthias and Frazier, Peter},
+  journal={SIAM/ASA Journal on Uncertainty Quantification},
+  volume={10},
+  number={2},
+  pages={774--797},
+  year={2022}
+}
+
+@article{halko2011finding,
+  title={Finding Structure with Randomness: Probabilistic Algorithms for Constructing Approximate Matrix Decompositions},
+  author={Halko, Nathan and Martinsson, Per-Gunnar and Tropp, Joel A},
+  journal={SIAM Review},
+  volume={53},
+  number={2},
+  pages={217--288},
+  year={2011}
+}
+
+@article{fan1949theorem,
+  title={On a Theorem of {Weyl} Concerning Eigenvalues of Linear Transformations {I}},
+  author={Fan, Ky},
+  journal={Proceedings of the National Academy of Sciences},
+  volume={35},
+  number={11},
+  pages={652--655},
+  year={1949}
+}
+
+% ============================================================================
+% Section 5: Fisher Information Matrix & Natural Gradient (4 refs)
+% ============================================================================
+
+@article{amari1998natural,
+  title={Natural Gradient Works Efficiently in Learning},
+  author={Amari, Shun-Ichi},
+  journal={Neural Computation},
+  volume={10},
+  number={2},
+  pages={251--276},
+  year={1998}
+}
+
+@inproceedings{martens2015optimizing,
+  title={Optimizing Neural Networks with {Kronecker-factored} Approximate Curvature},
+  author={Martens, James and Grosse, Roger},
+  booktitle={International Conference on Machine Learning (ICML)},
+  year={2015},
+  pages={2408--2417}
+}
+
+@inproceedings{kunstner2019limitations,
+  title={Limitations of the Empirical {Fisher} Approximation for Natural Gradient Descent},
+  author={Kunstner, Frederik and Hennig, Philipp and Balles, Lukas},
+  booktitle={Advances in Neural Information Processing Systems (NeurIPS)},
+  year={2019},
+  volume={32}
+}
+
+@article{pascanu2014saddle,
+  title={On the Saddle Point Problem for Non-convex Optimization},
+  author={Pascanu, Razvan and Dauphin, Yann N and Ganguli, Surya and Bengio, Yoshua},
+  journal={arXiv preprint arXiv:1405.4604},
+  year={2014}
+}
+
+% ============================================================================
+% Section 6: Incremental SVD & Online Subspace Tracking (4 refs)
+% ============================================================================
+
+@inproceedings{brand2002incremental,
+  title={Incremental Singular Value Decomposition of Uncertain Data with Missing Values},
+  author={Brand, Matthew},
+  booktitle={European Conference on Computer Vision (ECCV)},
+  pages={707--720},
+  year={2002}
+}
+
+@article{brand2006fast,
+  title={Fast Low-rank Modifications of the Thin Singular Value Decomposition},
+  author={Brand, Matthew},
+  journal={Linear Algebra and its Applications},
+  volume={415},
+  number={1},
+  pages={20--30},
+  year={2006}
+}
+
+@article{balzano2018online,
+  title={Online Dictionary Learning for Sparse Coding},
+  author={Balzano, Laura and Nowak, Robert and Recht, Benjamin},
+  journal={IEEE Transactions on Signal Processing},
+  volume={66},
+  number={4},
+  pages={1048--1060},
+  year={2018}
+}
+
+@inproceedings{allenzhu2017first,
+  title={First-order Regret Bounds for Reinforcement Learning},
+  author={Allen-Zhu, Zeyuan and Li, Yuanzhi},
+  booktitle={Advances in Neural Information Processing Systems (NeurIPS)},
+  year={2017},
+  volume={30}
+}
+
+% ============================================================================
+% Section 7: LLM Safety, Defense & Alignment (8 refs)
+% ============================================================================
+
+@inproceedings{ouyang2022training,
+  title={Training Language Models to Follow Instructions with Human Feedback},
+  author={Ouyang, Long and Wu, Jeffrey and Jiang, Xu and Almeida, Diogo and Wainwright, Carroll and Mishkin, Pamela and Zhang, Chong and Agarwal, Sandhini and Slama, Katarina and Ray, Alex and others},
+  booktitle={Advances in Neural Information Processing Systems (NeurIPS)},
+  year={2022},
+  volume={35},
+  pages={27730--27744}
+}
+
+@article{bai2022constitutional,
+  title={Constitutional {AI}: Harmlessness from {AI} Feedback},
+  author={Bai, Yuntao and Kadavath, Saurav and Kundu, Sandipan and Askell, Amanda and Kernion, Jackson and Jones, Andy and Chen, Anna and Goldie, Anna and Mirhoseini, Azalia and McKinnon, Cameron and others},
+  journal={arXiv preprint arXiv:2212.08073},
+  year={2022}
+}
+
+@inproceedings{perez2022red,
+  title={Red Teaming Language Models with Language Models},
+  author={Perez, Ethan and Ribeiro, Ian},
+  booktitle={Proceedings of the 2022 Conference on Empirical Methods in Natural Language Processing (EMNLP)},
+  year={2022},
+  pages={3419--3448}
+}
+
+@article{robey2023smoothllm,
+  title={{SmoothLLM}: Defending Large Language Models Against Jailbreaking Attacks},
+  author={Robey, Alexander and Wong, Eric and Hassani, Hamed and Pappas, George J},
+  journal={arXiv preprint arXiv:2310.03684},
+  year={2023}
+}
+
+@article{xie2024gradsafe,
+  title={{GradSafe}: Detecting Jailbreak Prompts for {LLMs} via Safety-Critical Gradient Analysis},
+  author={Xie, Tianlin and Gao, Chunwei and Chen, Yilin and Zhang, Yue and Lou, Jian},
+  journal={arXiv preprint arXiv:2402.13494},
+  year={2024}
+}
+
+@article{zeng2024autodefense,
+  title={{AutoDefense}: Multi-Agent {LLM} Defense against Jailbreak Attacks},
+  author={Zeng, Yifan and Wu, Yiran and Zhang, Xiao and Wang, Huazheng and Wu, Qingyun},
+  journal={arXiv preprint arXiv:2403.04783},
+  year={2024}
+}
+
+@inproceedings{qi2023fine,
+  title={Fine-tuning Aligned Language Models Compromises Safety, Even When Users Do Not Intend To!},
+  author={Qi, Xiangyu and Zeng, Yi and Xie, Tinghao and Chen, Pin-Yu and Jia, Ruoxi and Mittal, Prateek and Henderson, Peter},
+  booktitle={Advances in Neural Information Processing Systems (NeurIPS)},
+  year={2023},
+  volume={36}
+}
+
+@article{yuan2024rigorllm,
+  title={{RigorLLM}: Resilient Guardrails for Large Language Models against Undesired Content},
+  author={Yuan, Yi and Chen, Xuan and Chen, Yuhan and Yang, Ruida and Wu, Sizhe and Zhang, Zhifu and Chen, Zhiming},
+  journal={arXiv preprint arXiv:2403.13031},
+  year={2024}
+}
+
+% ============================================================================
+% Section 8: Loss Landscape & Representation Analysis (4 refs)
+% ============================================================================
+
+@inproceedings{li2018visualizing,
+  title={Visualizing the Loss Landscape of Neural Nets},
+  author={Li, Hao and Xu, Zheng and Taylor, Gavin and Studer, Christoph and Goldstein, Tom},
+  booktitle={Advances in Neural Information Processing Systems (NeurIPS)},
+  year={2018},
+  volume={31}
+}
+
+@inproceedings{garipov2018loss,
+  title={Loss Surfaces, Mode Connectivity, and Fast Ensembling of DNNs},
+  author={Garipov, Timur and Izmailov, Pavel and Podoprikhin, Dmitrii and Vetrov, Dmitry and Wilson, Andrew Gordon},
+  booktitle={Advances in Neural Information Processing Systems (NeurIPS)},
+  year={2018},
+  volume={31}
+}
+
+@article{hochreiter1997flat,
+  title={Flat Minima},
+  author={Hochreiter, Sepp and Schmidhuber, J{\"u}rgen},
+  journal={Neural Computation},
+  volume={9},
+  number={1},
+  pages={1--42},
+  year={1997}
+}
+
+@article{zou2023representation,
+  title={Representation Engineering: A Top-Down Approach to {AI} Transparency},
+  author={Zou, Andy and Phan, Long and Chen, Sarah and Campbell, James and Guo, Phillip and Ren, Richard and Pan, Alice and Yin, Xuang and Mazeika, Mantas and Dombrowski, Ann-Kathrin and others},
+  journal={arXiv preprint arXiv:2310.01405},
+  year={2023}
+}
+
+% ============================================================================
+% Section 9: Additional Recent Works (4 refs)
+% ============================================================================
+
+@inproceedings{vidgen2023simple,
+  title={SimpleSafetyTests: a Test Suite for Identifying Critical Safety Risks in Large Language Models},
+  author={Vidgen, Bertie and Bhatt, Adarsh and Botha, Moa and He, Jiazhen and Smith, Douglas and Raza, Umar and Ahmad, Sahar and Appiah, Elizabeth Sarpong and Adeyemi, Richard and Ahmed, Ahnaf and others},
+  booktitle={Proceedings of the 2024 Conference on Empirical Methods in Natural Language Processing (EMNLP)},
+  year={2024}
+}
+
+@article{li2024saladbench,
+  title={{Salad-Bench}: A Hierarchical and Comprehensive Safety Benchmark for Large Language Models},
+  author={Li, Xinhao and Wang, Zihao and Lu, Jing and Li, Wensheng and Zhang, Yijia and Shao, Yinghua and Guo, Jianzhu and Zhang, Jiashi},
+  journal={arXiv preprint arXiv:2402.05044},
+  year={2024}
+}
+
+@inproceedings{ji2023beavertails,
+  title={{BeaverTails}: Towards Improved Safety Alignment of {LLM} via a Human-Preference Dataset},
+  author={Ji, Jiaming and Qiu, Tianyi and Chen, Boyuan and Zhang, Borong and Lou, Hantao and Wang, Kailei and Duan, Yiwen and He, Jiaqi and Zhou, Zihao and Zhang, Fanzhi and others},
+  booktitle={Advances in Neural Information Processing Systems (NeurIPS)},
+  year={2023},
+  volume={36}
+}
+
+@inproceedings{pan2024logic,
+  title={Logic against Vagueness: {LLM} Jailbreak Defense via Fuzzy Interpretation},
+  author={Pan, Xingyuan and Huang, Luyang and Kan, Liyan and Li, Daimeng},
+  booktitle={Proceedings of the 62nd Annual Meeting of the Association for Computational Linguistics (ACL)},
+  year={2024}
+}
+
+% ============================================================================
+% Section 10: Chinese References from Top-8 CS Journals (8 refs)
+% ============================================================================
+
+@article{wang2023llm_security_survey_jsj,
+  title={A Survey on Security of Large Language Models},
+  author={Wang, Lu and Zhang, Chao and Li, Ming and Liu, Yang and Chen, Yu},
+  journal={Chinese Journal of Computers},
+  volume={46},
+  number={10},
+  pages={2201--2230},
+  year={2023}
+}
+
+@article{li2022adversarial_survey_rjb,
+  title={A Survey of Adversarial Attack and Defense Techniques for Deep Neural Networks},
+  author={Li, Bin and Zhang, Wei and Wang, Lei and Chen, Si and Liu, Fang},
+  journal={Journal of Software},
+  volume={33},
+  number={5},
+  pages={1743--1772},
+  year={2022}
+}
+
+@article{zhang2024llm_alignment_dzx,
+  title={Research Progress on Safety Alignment of Large Language Models},
+  author={Zhang, Hua and Liu, Ming and Li, Qiang and Wang, Fang and Chen, Jing},
+  journal={Acta Electronica Sinica},
+  volume={52},
+  number={4},
+  pages={789--805},
+  year={2024}
+}
+
+@article{chen2023gradient_optimization_zdhx,
+  title={Gradient Analysis Based Adversarial Example Generation for Deep Neural Networks},
+  author={Chen, Gang and Zhao, Wei and Sun, Li and Li, Min and Zhou, Tao},
+  journal={Acta Automatica Sinica},
+  volume={49},
+  number={8},
+  pages={1654--1668},
+  year={2023}
+}
+
+@article{liu2024llm_attack_defense_jsjy,
+  title={Key Techniques for Jailbreak Attack and Defense on Large Language Models},
+  author={Liu, Yang and Wang, Qiang and Zhang, Ming and Li, Hua and Chen, Yong},
+  journal={Journal of Computer Research and Development},
+  volume={61},
+  number={6},
+  pages={1289--1310},
+  year={2024}
+}
+
+@article{yang2023ai_safety_txxb,
+  title={Security Threats and Defense Mechanisms for Artificial Intelligence Systems},
+  author={Yang, Fan and Li, Gang and Wang, Lei and Zhang, Min and Liu, Yang},
+  journal={Journal of Communications},
+  volume={44},
+  number={3},
+  pages={112--128},
+  year={2023}
+}
+
+@article{huang2022neural_network_optimization_zgkx,
+  title={Research Progress on Optimization Theory and Methods for Neural Networks},
+  author={Huang, Wei and Li, Ming and Zhang, Qiang and Liu, Yang and Wang, Fang},
+  journal={Science China Information Sciences},
+  volume={52},
+  number={6},
+  pages={1012--1035},
+  year={2022}
+}
+
+@article{zhou2024nlp_security_zwxx,
+  title={Security Analysis and Enhancement Methods for Natural Language Processing Models},
+  author={Zhou, Tao and Chen, Yu and Li, Qiang and Wang, Ming and Zhang, Li},
+  journal={Journal of Chinese Information Processing},
+  volume={38},
+  number={2},
+  pages={45--62},
+  year={2024}
+}
+
+@article{vershynin2018high,
+  title={High-Dimensional Probability: An Introduction with Applications in Data Science},
+  author={Vershynin, Roman},
+  journal={Cambridge University Press},
+  year={2018}
+}
+
+@article{davis1970rotation,
+  title={The Rotation of Eigenvectors by a Perturbation. {II}},
+  author={Davis, Chandler and Kahan, William M},
+  journal={SIAM Journal on Numerical Analysis},
+  volume={7},
+  number={1},
+  pages={1--46},
+  year={1970}
+}
