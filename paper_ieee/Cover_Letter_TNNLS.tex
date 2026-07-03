@@ -1,0 +1,48 @@
+\documentclass[11pt]{letter}
+\usepackage[margin=1in]{geometry}
+\usepackage{hyperref}
+\usepackage{times}
+
+\signature{Dapeng Lang (Corresponding Author)\\
+School of Computer Science and Technology\\
+Email: langdapeng@outlook.com}
+
+\address{Dapeng Lang\\
+School of Computer Science and Technology}
+
+\date{\today}
+
+\begin{document}
+\begin{letter}{Editor-in-Chief\\
+IEEE Transactions on Neural Networks and Learning Systems}
+
+\opening{Dear Editor,}
+
+We are pleased to submit our manuscript entitled \textbf{``Active Subspace Attack: Exploiting Spectral Geometry of Loss Landscapes for Efficient LLM Jailbreaking''} for consideration for publication in IEEE Transactions on Neural Networks and Learning Systems.
+
+\textbf{Relevance to TNNLS.} Our work sits at the intersection of neural network optimization theory, spectral analysis of loss landscapes, and adversarial machine learning --- all core themes of TNNLS. Specifically, we introduce the \emph{Attack Fisher Information Matrix} (AFIM), a task-specific spectral decomposition of the adversarial loss landscape for large language models (LLMs). We discover that AFIM exhibits a pronounced power-law eigenvalue decay ($\lambda_i \propto i^{-\beta}$, $\beta \in [1.8, 2.4]$) across six model families, revealing a low-dimensional \emph{active subspace} that captures the dominant attack directions. This finding directly extends the active subspace methodology from the uncertainty quantification community to the domain of neural network adversarial robustness, a connection we believe will be of significant interest to the TNNLS readership.
+
+\textbf{Technical contributions.} From a neural network perspective, our work addresses a fundamental challenge: optimizing over \emph{discrete} token inputs to maximize a \emph{continuous} loss defined through the model's internal representations. We propose a principled four-component framework:
+
+\begin{enumerate}
+  \item A \textbf{Gumbel-Softmax relaxation with Straight-Through Estimator} that enables gradient-based optimization through discrete token selections, providing unbiased gradient estimates for the otherwise non-differentiable LLM input space.
+  
+  \item A \textbf{Brand-style incremental SVD} algorithm that tracks the active subspace online with $O(dk^2)$ complexity per update, avoiding costly full eigendecompositions.
+  
+  \item A \textbf{subspace-projected gradient descent} procedure that restricts adversarial optimization to the identified low-dimensional manifold, achieving a $2.2\times$ wall-clock speedup over existing methods while producing adversarial suffixes with substantially lower perplexity ($15.3$ vs.\ $4250.6$).
+  
+  \item Rigorous \textbf{theoretical guarantees}: a Ky Fan maximum principle-based SNR lower bound (Theorem 3), a subspace estimation error bound (Theorem 4), and an $O(1/\sqrt{T})$ convergence rate for the adaptive subspace optimization (Theorem 5).
+\end{enumerate}
+
+\textbf{Empirical validation.} We conduct comprehensive experiments on six model families (LLaMA-3-8B/70B, Phi-4-mini, Qwen2-1.5B, Gemma-2-2B, GPT-4o-mini) using two standardized benchmarks (AdvBench and HarmBench). Our method achieves state-of-the-art attack success rates across all models while generating semantically coherent adversarial suffixes that effectively evade perplexity-based filters, SmoothLLM, and SafeDecoding defenses. An ablation study with nine variants confirms the necessity of each component.
+
+\textbf{Why TNNLS.} We believe this paper is particularly well-suited for TNNLS because it bridges the gap between theoretical spectral geometry and practical neural network security. The active subspace perspective on adversarial loss landscapes is a novel analytical tool that extends beyond jailbreaking --- it provides a general framework for understanding the low-dimensional structure of neural network optimization in discrete input spaces. This perspective, combined with our rigorous convergence analysis, aligns closely with the journal's emphasis on both algorithmic innovation and theoretical depth in neural network learning systems.
+
+The manuscript has not been published elsewhere and is not under consideration by any other journal. All authors have approved the manuscript and agree with its submission to IEEE TNNLS. Our code and supplementary materials are available at: \url{https://github.com/dapenglang/asa-jailbreak-code}.
+
+We look forward to your favorable consideration.
+
+\closing{Sincerely,}
+
+\end{letter}
+\end{document}
