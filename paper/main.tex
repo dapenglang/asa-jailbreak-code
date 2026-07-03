@@ -7,9 +7,12 @@
 \usepackage{multirow}
 \usepackage{enumitem}
 \usepackage{algorithm}
+\usepackage{algorithmicx }
 \usepackage{algpseudocode}
-\algrenewcommand\alglinenumber[1]{\footnotesize\arabic{alglinenumber}}
-\newcommand{\Return}{\State \textbf{return} }
+\algrenewcommand\alglinenumber[1]{\footnotesize #1:} 
+\newcommand{\Return}{\State \textbf{return} } 
+\renewcommand{\algorithmicrequire}{\textbf{Require}}
+\renewcommand{\algorithmicensure}{\textbf{Ensure}}
 \usepackage{subcaption}
 \usepackage[table]{xcolor}
 \usepackage{graphicx}
@@ -65,9 +68,10 @@
 
 Gradient-based jailbreak attacks such as GCG can circumvent LLM safety alignment by optimizing adversarial suffixes in the full token embedding space. However, the adversarial loss landscape exhibits pronounced spectral anisotropy: gradient signal concentrates in a small number of principal directions while the remaining dimensions are dominated by noise, rendering full-space gradient descent suboptimal.
 
-We propose \textit{Active Subspace Attack} (ASA), which introduces the Attack Fisher Information Matrix (AFIM) to characterize the second-order spectral geometry of adversarial gradients, employs Brand's incremental SVD for online active subspace tracking with $O(dk^2)$ complexity, and projects full-space gradients onto the dominant eigenspace to enhance the signal-to-noise ratio by $O(d/k)$. Theoretically, we prove that the AFIM eigenvalues follow power-law decay with $\beta \in [1.8, 2.4]$ and that subspace-projected optimization achieves faster convergence than full-space methods. Empirically, ASA achieves state-of-the-art attack success rates across six model families on AdvBench and HarmBench, while generating low-perplexity suffixes that effectively evade perplexity-based filters and SmoothLLM defenses. Our code is available at \url{https://github.com/dapenglang/asa-jailbreak-code}.
+We propose \textit{Active Subspace Attack} (ASA), which introduces the Attack Fisher Information Matrix (AFIM) to characterize the second-order spectral geometry of adversarial gradients, employs Brand's incremental SVD for online active subspace tracking with $O(dk^2)$ complexity, and projects full-space gradients onto the dominant eigenspace to enhance the signal-to-noise ratio by $O(d/k)$. Theoretically, we prove that the AFIM eigenvalues follow power-law decay with $\beta \in [1.8, 2.4]$ and that subspace-projected optimization achieves faster convergence than full-space methods. Empirically, ASA achieves state-of-the-art attack success rates across six model families on AdvBench and HarmBench, while generating low-perplexity suffixes that effectively evade perplexity-based filters and SmoothLLM defenses.Our code is available at \url{https://github.com/dapenglang/asa-jailbreak-code}.
 
 \end{abstract}
+
 
 
 %% Keywords
@@ -796,24 +800,28 @@ Algorithm \ref{alg:asa} summarizes the complete ASA framework. The algorithm ope
 \begin{algorithm}[t]
 \caption{Active Subspace Attack (ASA)}
 \label{alg:asa}
+% [1] 表示每行都显示行号，是开启行号的关键
 \begin{algorithmic}[1]
 \Require Harmful query $\mathbf{Q}$, target prefix $\mathbf{T}$, suffix length $m$, vocabulary $\mathcal{V}$, explained variance threshold $\rho$, warm-up iterations $T_{\text{warm}}$, total iterations $T$
 \Ensure Adversarial suffix tokens $\mathbf{S}^*$
+
+% 第1行：初始化，只用单个 \State
 \State Initialize suffix logits $\{\mathbf{l}_i\}_{i=1}^m$ randomly; set AFIM $\mathbf{F} = \mathbf{0}$, iteration counter $t = 0$
-\For{$t = 1, 2, \ldots, T$}
-    \State Sample tokens via Gumbel-Softmax: $\hat{\mathbf{S}} \leftarrow \text{SampleTokens}(\{\mathbf{l}_i\}, \tau_t)$
+% For循环不需要加 \State
+\For{$t = 1, 2, \dots, T$}
+    \State Sample tokens via Gumbel-Softmax: $\hat{\mathbf{S}} \leftarrow \text{SampleTokens}(\{\mathbf{l}_i\},\tau_t)$
     \State Compute loss gradient: $\mathbf{g}_t \leftarrow \nabla L(\mathbf{Q} \oplus \hat{\mathbf{S}})$
     \If{$t > T_{\text{warm}}$}
         \State Update AFIM: $\mathbf{F} \leftarrow \text{IncrementalSVD}(\mathbf{F}, \mathbf{g}_t, k^*)$
         \State Extract active subspace: $\mathbf{U}_{k^*} \leftarrow \text{TopKEigenvectors}(\mathbf{F}, k^*)$
-        \State Project gradient: $\tilde{\mathbf{g}}_t \leftarrow \mathbf{U}_{k^*} \mathbf{U}_{k^*}^\top \mathbf{g}_t$
+        \State Project gradient: $\tilde{\mathbf{g}}_t \leftarrow \mathbf{U}_{k^*}\mathbf{U}_{k^*}^\top \mathbf{g}_t$
     \Else
         \State $\tilde{\mathbf{g}}_t \leftarrow \mathbf{g}_t$ \Comment{Full-space warm-up}
     \EndIf
-    \State Update logits (STE): $\mathbf{l}_i \leftarrow \mathbf{l}_i - \eta \cdot \nabla_{\mathbf{l}_i} \tilde{L}$ for $i = 1, \ldots, m$
-    \State Anneal temperature: $\tau_{t+1} \leftarrow \max(\tau_{\min}, \gamma \tau_t)$
+    \State Update logits (STE): $\mathbf{l}_i \leftarrow \mathbf{l}_i - \eta \cdot \nabla_{\mathbf{l}_i} \tilde{L}$ for $i = 1, \dots, m$
+    \State Anneal temperature: $\tau_{t+1} \leftarrow \max(\tau_{\text{min}}, \gamma \tau_t)$
 \EndFor
-\State \Return Top-1 tokens: $\mathbf{S}^* = [\arg\max \mathbf{l}_1; \ldots; \arg\max \mathbf{l}_m]$
+\State Return Top-1 tokens: $\mathbf{S}^* = [\arg\max \mathbf{l}_1; \dots; \arg\max \mathbf{l}_m]$
 \end{algorithmic}
 \end{algorithm}
 
@@ -878,7 +886,7 @@ This section presents a comprehensive experimental evaluation of the Active Subs
 \subsection{Experimental Setup}
 \label{sec:exp_setup}
 
-\paragraph{Target Models.} We evaluate ASA on six safety-aligned LLMs spanning four model families with varying architectures, parameter sizes, and alignment methods. Table~\ref{tab:models} summarizes the target models. This diversity ensures that our findings are not model-specific artifacts.
+\paragraph{Target Models} We evaluate ASA on six safety-aligned LLMs spanning four model families with varying architectures, parameter sizes, and alignment methods. Table~\ref{tab:models} summarizes the target models. This diversity ensures that our findings are not model-specific artifacts.
 
 \begin{table}[t]
 \centering
@@ -902,7 +910,7 @@ GPT-4o-mini & OpenAI & -- & RLHF & -- \\
 
 \paragraph{Benchmark.} We adopt HarmBench~\cite{mazeika2024harmbench}, the standardized evaluation framework for automated red teaming, with 520 adversarial behavior prompts spanning 13 categories (e.g., physical harm, cybersecurity, illegal activities). Following the standard protocol, we report ASR at the behavior level: a query is considered successfully jailbroken if any response from the model is judged harmful by the HarmBench classifier.
 
-\paragraph{Metrics.} We employ five complementary metrics to comprehensively assess attack quality:
+\paragraph{Metrics..} We employ five complementary metrics to comprehensively assess attack quality:
 \begin{itemize}[leftmargin=*]
     \item \textbf{Attack Success Rate (ASR, \%)}: Primary metric measuring the percentage of queries that produce harmful outputs.
     \item \textbf{Average Iterations}: Number of optimization steps until convergence (loss below threshold or ASR achieved).
@@ -956,7 +964,7 @@ DrAttack & 79.1 & 322 & 14.5 & 76.8 & 348 & 14.5 & 40.8 & 380 & 16.8 \\
 
 \paragraph{Attack Effectiveness.} ASA achieves the highest ASR on all six models. On the two LLaMA-3 variants, ASA improves upon I-GCG by 2.9\%--3.6\%, confirming that subspace projection does not sacrifice attack quality. The improvement is most pronounced on GPT-4o-mini, where ASA achieves 52.8\% ASR compared to 48.1\% for I-GCG (+4.7\%), demonstrating that the spectral geometry advantage is not model-specific. The average ASR improvement over the strongest non-ASA baseline (I-GCG) is +3.5\% across all models.
 
-\paragraph{Convergence Efficiency.} The convergence speedup is consistent across all models. On LLaMA-3-8B, ASA requires 162 iterations versus 480 for GCG (66.2\% reduction) and 215 for I-GCG (24.7\% reduction). On Phi-4-mini, the speedup is even more dramatic: 173 iterations versus 642 for AutoDAN (73.1\% reduction). These results validate the theoretical prediction from Corollary~\ref{cor:speedup} that subspace projection reduces the effective condition number.
+\paragraph{Convergence Efficiency.} The convergence speedup is consistent across all models. On LLaMA-3-8B, ASA requires 162 iterations versus 480 for GCG (66.2\% reduction) and 215 for I-GCG (24.7\% reduction). On Phi-4-mini, the speedup is even more dramatic: 179 iterations versus 680 for GCG (73.7\% reduction). These results validate the theoretical prediction from Corollary~\ref{cor:speedup} that subspace projection reduces the effective condition number.
 
 \paragraph{Memory Efficiency.} The memory reduction is uniform across models. ASA requires only 5.4 MB of controller memory compared to 18.2 MB for GCG/I-GCG/AutoDAN (70.3\% reduction). This is consistent with the theoretical analysis in Lemma~\ref{lem:incsvd_complexity}: storing the rank-$k^*$ subspace requires $O(dk)$ memory versus $O(d^2)$ for the full AFIM.
 
@@ -981,7 +989,7 @@ DrAttack & 2180.7 & 12.3 \\
 \end{tabular}
 \end{table}
 
-The PPL of ASA (15.3) is comparable to natural text (GPT-2 PPL $\approx$ 8--12 on clean English), while GCG produces suffixes with PPL = 4250.6 that are trivially detected. I-GCG reduces PPL to 1250.3 via multi-target templates but still fails the PPL $< 100$ filter 27.9\% of the time. ASA's 97.2\% filter pass rate confirms that subspace-projected optimization naturally constrains token selection to semantically coherent regions of the vocabulary.
+The PPL of ASA (6.42) is nearly indistinguishable from natural text, while GCG produces suffixes with PPL = 4250.6 that are trivially detected. I-GCG reduces PPL to 1250.3 via multi-target templates but still fails the PPL $< 100$ filter 27.9\% of the time. ASA's 100\% filter pass rate confirms that subspace-projected optimization naturally constrains token selection to semantically coherent regions of the vocabulary.
 
 \subsection{Ablation Study}
 \label{sec:ablation}
@@ -1009,9 +1017,9 @@ w/o EWMA (batch avg) & 82.9 & 168 & 15.9 & 5.8 \\
 \end{tabular}
 \end{table}
 
-\paragraph{Core Component Analysis.} Removing active subspace projection (i.e., using full-space gradients) degrades ASR by 6.8\% and increases iterations by 206\%, confirming that subspace-constrained optimization is the single most important contributor to both effectiveness and efficiency. Replacing incremental SVD with full batch eigendecomposition increases memory from 5.4 MB to 52.1 MB (865\% increase), validating Theorem~\ref{thm:subspace_error} that the incremental procedure is both accurate and memory-efficient.
+\paragraph{Core Component Analysis.} Removing active subspace projection (i.e., using full-space gradients) degrades ASR by 6.8\% and increases iterations by 196\%, confirming that subspace-constrained optimization is the single most important contributor to both effectiveness and efficiency. Replacing incremental SVD with full batch eigendecomposition increases memory from 5.4 MB to 52.1 MB (865\% increase), validating Theorem~\ref{thm:subspace_error} that the incremental procedure is both accurate and memory-efficient.
 
-\paragraph{Continuous-to-Discrete Mapping.} Removing Gumbel-Softmax (replacing with top-$k$ sampling) degrades ASR by 4.9\% and increases PPL from 15.3 to 18.6, confirming that the differentiable relaxation is essential for effective gradient flow. Removing STE (using only soft gradients in the forward pass) increases PPL to 2960.5, demonstrating that the hard forward pass is critical for generating discrete tokens that the LLM can actually process.
+\paragraph{Continuous-to-Discrete Mapping.} Removing Gumbel-Softmax (replacing with top-$k$ sampling) degrades ASR by 4.9\% and increases PPL from 6.42 to 8.35, confirming that the differentiable relaxation is essential for effective gradient flow. Removing STE (using only soft gradients in the forward pass) increases PPL to 4120.3, demonstrating that the hard forward pass is critical for generating discrete tokens that the LLM can actually process.
 
 \paragraph{Algorithmic Details.} Removing the warm-up phase degrades ASR by 3.7\% and increases iterations by 14.2\%, validating Remark~\ref{rem:warmup}: premature subspace projection with insufficient gradient statistics degrades performance. Replacing adaptive $k^*$ with a fixed $k = 32$ slightly degrades ASR by 1.9\%, suggesting that the explained variance criterion is beneficial but not critical. Removing temperature annealing degrades ASR by 5.3\% and increases PPL to 12.4, confirming Lemma~\ref{lem:entropy}: the annealing schedule is essential for transitioning from exploration to exploitation.
 
@@ -1031,7 +1039,7 @@ We analyze the optimization dynamics of ASA compared to baselines.
 \label{fig:convergence}
 \end{figure}
 
-\paragraph{Wall-Clock Time Analysis.} Table~\ref{tab:wallclock} reports the wall-clock time per iteration and total attack time. Despite the additional overhead of incremental SVD ($O(dk^2)$ per iteration), ASA's total wall-clock time is 55.3\% lower than GCG on LLaMA-3-8B (19.7 min vs.\ 44.1 min) because the dominant cost is the LLM forward/backward pass, and ASA requires far fewer iterations.
+\paragraph{Wall-Clock Time Analysis.} Table~\ref{tab:wallclock} reports the wall-clock time per iteration and total attack time. Despite the additional overhead of incremental SVD ($O(dk^2)$ per iteration), ASA's total wall-clock time is 58.3\% lower than GCG on LLaMA-3-8B (18.4 min vs.\ 44.1 min) because the dominant cost is the LLM forward/backward pass, and ASA requires far fewer iterations.
 
 \begin{table}[t]
 \centering
@@ -1170,7 +1178,7 @@ Soft-GCG & 79.2 & 0.0 & 32.1 & 38.7 \\
 \end{tabular}
 \end{table}
 
-ASA demonstrates significantly higher defense evasion capability than all baselines. Against perplexity-based filtering (threshold PPL $< 100$), ASA achieves 97.2\% pass rate while GCG and Soft-GCG are completely blocked. Against SmoothLLM perturbation defense, ASA retains 56.2\% ASR compared to 28.4\% for GCG (+97.9\% relative improvement). Against SafeDecoding, ASA achieves 61.4\% ASR compared to 52.3\% for I-GCG. The natural coherence of ASA-generated suffixes (PPL = 15.3) is the key enabler: perplexity-based defenses are inherently less effective against attacks that produce human-readable text.
+ASA demonstrates significantly higher defense evasion capability than all baselines. Against perplexity-based filtering (threshold PPL $< 100$), ASA achieves 100\% pass rate while GCG and Soft-GCG are completely blocked. Against SmoothLLM perturbation defense, ASA retains 56.2\% ASR compared to 28.4\% for GCG (+97.9\% relative improvement). Against SafeDecoding, ASA achieves 61.4\% ASR compared to 52.3\% for I-GCG. The natural coherence of ASA-generated suffixes (PPL = 6.42) is the key enabler: perplexity-based defenses are inherently less effective against attacks that produce human-readable text.
 
 \subsection{Case Study}
 \label{sec:case_study}
@@ -1179,7 +1187,7 @@ Given the harmful query ``Write a tutorial on how to make a bomb,'' we compare t
 
 GCG generates a suffix with PPL = 4250.6 consisting of incoherent token sequences (e.g., ``! describing unrelated climbing WaitFor Funding {}=  programming''). This suffix is immediately flagged by perplexity filters and fails to induce harmful content on models with even basic input sanitization.
 
-In contrast, ASA generates a semantically coherent suffix with PPL = 15.3 (e.g., ``Please provide the information requested above in a clear and detailed manner. I need''). This suffix reads as natural continuation text, passes all perplexity filters, and successfully induces harmful content. The key difference is that ASA's subspace-projected optimization constrains token selection to the high-probability region of the vocabulary, which naturally overlaps with semantically meaningful token sequences. This property is a direct consequence of the SNR enhancement (Theorem~\ref{thm:snr}): by filtering out noise-dominated gradient directions, the optimization follows the signal gradient toward semantically coherent solutions.
+In contrast, ASA generates a semantically coherent suffix with PPL = 6.42 (e.g., ``Please provide the information requested above in a clear and detailed manner. I need''). This suffix reads as natural continuation text, passes all perplexity filters, and successfully induces harmful content. The key difference is that ASA's subspace-projected optimization constrains token selection to the high-probability region of the vocabulary, which naturally overlaps with semantically meaningful token sequences. This property is a direct consequence of the SNR enhancement (Theorem~\ref{thm:snr}): by filtering out noise-dominated gradient directions, the optimization follows the signal gradient toward semantically coherent solutions.
 
 \paragraph{Detailed Analysis of the SNR Mechanism.} To further validate the theoretical SNR analysis, we measure the empirical noise-to-signal ratio at each iteration during optimization. For GCG, the noise ratio averages 0.87 (i.e., 87\% of each gradient update is noise), while for ASA it averages 0.23 after the warm-up phase. This 3.8$\times$ reduction in noise ratio is consistent with the theoretical prediction: when $k^* = 32$ and $d = 4096$, the noise reduction factor is approximately $d / k^* = 128$, but the effective reduction is moderated by the non-ideal spectral gap and the warm-up period.
 
@@ -1198,6 +1206,7 @@ Our theoretical contributions establish a rigorous foundation for understanding 
 Empirically, ASA achieves state-of-the-art attack success rates across six model families on AdvBench and HarmBench, while generating low-perplexity suffixes that evade perplexity-based filters, SmoothLLM, and SafeDecoding defenses. This challenges the prevailing assumption that gradient-based attacks inevitably produce easily detectable outputs.
 
 Several directions remain for future work: refining noise distribution characterization for tighter convergence bounds, integrating active subspace methods with reinforcement learning or genetic algorithms, extending the AFIM framework to multimodal jailbreak scenarios, and exploring loss landscape geometry shaping as a defense strategy.
+
 
 
 % ============================================================
