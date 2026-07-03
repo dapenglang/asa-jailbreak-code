@@ -153,17 +153,6 @@ results/
     └── results.json
 ```
 
-## Reproducing Paper Numbers
-
-Expected results (approximate, may vary ±2-3% due to randomness):
-
-| Model | ASA ASR | GCG ASR |
-|-------|---------|---------|
-| Vicuna-7B | 96.0% | 88.0% |
-| LLaMA-2-7B | 91.0% | 82.0% |
-| Mistral-7B | 94.0% | 85.0% |
-| Gemma-7B | 89.0% | 79.0% |
-
 ## Notes
 
 - Results may vary slightly across runs due to Gumbel noise
