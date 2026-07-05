@@ -18,6 +18,8 @@ This repository contains the official implementation of **ASA**, a gradient-base
 - **Online Subspace Tracking**: Brand's incremental SVD with $O(dk^2)$ complexity
 - **SNR Enhancement**: Subspace-projected gradients achieving $O(d/k)$ signal-to-noise ratio improvement
 - **Stealthy Suffixes**: Low-perplexity adversarial suffixes that evade perplexity-based defenses
+- **Multiple Spectral Methods**: Block Power Iteration, Randomized SVD (Halko et al.), and Hessian-based subspace (Pearlmutter's trick)
+- **Comprehensive Baselines**: PGD, AutoDAN, PAIR, BEAST, C&W alongside GCG for thorough comparison
 - **Comprehensive Evaluation**: Support for AdvBench, HarmBench, and multiple defense mechanisms
 
 ## Environment Requirements
@@ -277,13 +279,21 @@ python experiments/defense_evasion.py \
 asa-jailbreak/
 ├── asa/                          # Core ASA algorithm
 │   ├── gumbel_softmax.py         # Gumbel-Softmax + STE
-│   ├── afim.py                   # Attack Fisher Information Matrix
+│   ├── afim.py                   # Attack Fisher Information Matrix (Fisher)
 │   ├── incremental_svd.py        # Brand's incremental SVD
 │   ├── subspace_optimizer.py     # Subspace projection optimization
-│   ├── asa_attack.py             # Main ASA attack loop
+│   ├── power_iteration.py        # Block Power Iteration for top-k eigendecomposition
+│   ├── randomized_svd.py         # Randomized SVD (Halko et al., 2011)
+│   ├── hessian_subspace.py       # Hessian-based subspace via Lanczos + HVP
+│   ├── asa_attack.py             # Main ASA attack loop (Algorithm 1)
 │   └── utils.py                  # Utility functions
 ├── baselines/
-│   └── gcg.py                    # GCG baseline implementation
+│   ├── gcg.py                    # GCG baseline (Zou et al., 2023)
+│   ├── pgd.py                    # PGD baseline (Madry et al., 2018)
+│   ├── autodan.py                # AutoDAN baseline (Liu et al., 2023)
+│   ├── pair.py                   # PAIR baseline (Chao et al., 2023)
+│   ├── beast.py                  # BEAST baseline (backtracking search)
+│   └── cw.py                     # C&W style baseline (Carlini & Wagner, 2017)
 ├── data/
 │   ├── advbench.py               # AdvBench dataset loader
 │   └── harmbench.py              # HarmBench dataset loader
@@ -292,7 +302,7 @@ asa-jailbreak/
 │   ├── defenses.py               # Defense mechanisms
 │   └── harmbench_eval.py         # HarmBench standardized evaluation
 ├── experiments/
-│   ├── main_results.py           # Table 3 & 4
+│   ├── main_results.py           # Table 3 & 4 (supports all methods)
 │   ├── ablation.py               # Table 6
 │   ├── convergence.py            # Figure 3
 │   ├── spectral_analysis.py      # Figure 4
